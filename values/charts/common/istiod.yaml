@@ -1,0 +1,136 @@
+# replicaCount: 1
+# resources:
+#   requests:
+#     cpu: 100m
+#     memory: 256Mi
+#   limits:
+#     cpu: 500m
+#     memory: 512Mi
+# autoscaleEnabled: false
+# pdb:
+#   minAvailable: 1
+
+# meshConfig:
+#   outboundTrafficPolicy:
+#     mode: REGISTRY_ONLY
+#   defaultConfig:
+#     holdApplicationUntilProxyStarts: true
+
+# -----
+### Just for dev
+
+pilot:
+  replicaCount: 1
+
+  autoscaleEnabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  env:
+    ENABLE_NATIVE_SIDECARS: "true"
+
+  pdb:
+    minAvailable: 1
+
+meshConfig:
+  accessLogFile: /dev/stdout
+
+  outboundTrafficPolicy:
+    mode: REGISTRY_ONLY
+
+  defaultConfig:
+    holdApplicationUntilProxyStarts: true
+
+  extensionProviders:
+  - name: oauth2-proxy
+    envoyExtAuthzHttp:
+      service: oauth2-proxy.aib-auth.svc.cluster.local
+      port: 80
+      pathPrefix: /oauth2/auth
+      includeHeadersInCheck:
+        - "cookie"
+        - "authorization"
+        - "x-forwarded-proto"
+        - "x-forwarded-host"
+        - "x-forwarded-uri" # Passes the original path
+        # This dynamic header captures the original URL
+      includeAdditionalHeadersInCheck:
+        X-Auth-Request-Redirect: "https://%REQ(:authority)%%REQ(:path)%"
+      headersToUpstreamOnAllow:
+        - "path"
+        - "authorization"
+        - x-auth-request-user
+        - x-auth-request-email
+        - x-auth-request-groups
+        - x-is-project-owner
+        - kubeflow-userid
+        - kubeflow-groups
+      headersToDownstreamOnDeny:
+        - content-type
+        - set-cookie
+        - location
+
+global:
+  hub: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images
+  tag: 1.29.0
+
+  defaultResources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+
+  proxy:
+    autoInject: enabled
+
+    logLevel: info
+    componentLogLevel: misc:error
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    readinessInitialDelaySeconds: 0
+    readinessPeriodSeconds: 15
+    readinessFailureThreshold: 4
+
+    startupProbe:
+      enabled: true
+      failureThreshold: 600
+
+  logging:
+    level: "default:error"
+
+  defaultPodDisruptionBudget:
+    enabled: false
+
+telemetry:
+  enabled: true
+
+  v2:
+    enabled: true
+
+    prometheus:
+      enabled: true
+
+    stackdriver:
+      enabled: false
+
+sidecarInjectorWebhook:
+  enableNamespacesByDefault: false
+
+  rewriteAppHTTPProbe: true
+
+  reinvocationPolicy: Never
+
+gateways:
+  securityContext: {}

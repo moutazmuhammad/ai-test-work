@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------
+# Kyverno Policies for AIB Plus
+# ---------------------------------------------------------------
+# Each key under `policies` becomes a ClusterPolicy name.
+#
+# Required fields:
+#   enabled    - toggle the policy on/off
+#   title      - human-readable name
+#   rules      - list of Kyverno rule objects
+#
+# Optional fields:
+#   type                      - validate (default) | mutate | generate
+#   validationFailureAction   - Enforce | Audit (default, validate only)
+#   background                - scan existing resources (default true)
+#   category                  - e.g. "Pod Security", "Supply Chain"
+#   severity                  - critical | high | medium | low
+#   description               - longer explanation
+#   annotations               - extra annotations merged onto the policy
+#
+# Rule structure follows Kyverno's spec with these helpers:
+#   match[].kinds             - resource kinds
+#   match[].namespaces        - optional namespace filter
+#   exclude[].namespaces      - optional namespace exclusion
+#   exclude[].clusterRoles    - optional clusterRole exclusion
+# ---------------------------------------------------------------
+
+policies: {}
+  # example-policy:
+  #   enabled: true
+  #   type: validate            # validate | mutate | generate
+  #   title: Example Policy
+  #   category: Pod Security
+  #   severity: high
+  #   description: Blocks privileged containers.
+  #   validationFailureAction: Enforce
+  #   rules:
+  #     - name: deny-privileged
+  #       match:
+  #         - kinds: [Pod]
+  #       exclude:
+  #         - namespaces: [kube-system]
+  #       message: "Privileged containers are not allowed."
+  #       pattern:
+  #         spec:
+  #           containers:
+  #             - =(securityContext):
+  #                 =(privileged): false

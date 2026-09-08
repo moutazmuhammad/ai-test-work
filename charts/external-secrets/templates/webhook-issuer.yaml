@@ -1,0 +1,13 @@
+{{- if and .Values.webhook.create .Values.webhook.certManager.enabled .Values.webhook.certManager.cert.create }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "external-secrets.fullname" . }}-issuer
+  namespace: {{ template "external-secrets.namespace" . }}
+  labels:
+    {{- include "external-secrets-webhook.labels" . | nindent 4 }}
+    external-secrets.io/component: webhook
+  {{- end }}
+spec:
+  selfSigned: {}

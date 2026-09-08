@@ -1,0 +1,47 @@
+{{- if and .Values.meshEgress.gateway .Values.meshEgress.gateway.enabled }}
+{{- $defaults := .Values.meshEgress.defaults | default dict }}
+{{- range .Values.meshEgress.services }}
+{{- $svc := merge (deepCopy .) $defaults }}
+{{- if $svc.enabled }}
+{{- $protocol := upper ($svc.protocol | default "HTTPS") }}
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ $svc.name }}-egress-vs
+  namespace: {{ $.Values.meshEgress.namespace }}
+  labels:
+    {{- include "mesh-egress.labels" $ | nindent 4 }}
+spec:
+  hosts:
+    - "{{ $svc.host }}"
+  gateways:
+    - {{ $.Values.meshEgress.gateway.name }}
+  {{- if eq $protocol "HTTPS" }}
+  tls:
+    - match:
+        - gateways:
+            - {{ $.Values.meshEgress.gateway.name }}
+          port: {{ $svc.port }}
+          sniHosts:
+            - "{{ $svc.host }}"
+      route:
+        - destination:
+            host: {{ $svc.host }}
+            port:
+              number: {{ $svc.port }}
+  {{- else if eq $protocol "HTTP" }}
+  http:
+    - match:
+        - gateways:
+            - {{ $.Values.meshEgress.gateway.name }}
+          port: {{ $svc.port }}
+      route:
+        - destination:
+            host: {{ $svc.host }}
+            port:
+              number: {{ $svc.port }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

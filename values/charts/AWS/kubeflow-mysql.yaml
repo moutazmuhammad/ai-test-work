@@ -1,0 +1,20 @@
+# =============================================================================
+# Kubeflow MySQL — AWS overrides
+#
+# Only GCP-specific values are overridden here:
+#   - Image registry/repos: Artifact Registry → ECR
+# =============================================================================
+
+image:
+  registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+  repository: aibplus-images/bitnami-mysql
+
+volumePermissions:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-os-shell
+
+metrics:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-mysqld-exporter

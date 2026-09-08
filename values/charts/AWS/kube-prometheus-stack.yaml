@@ -1,0 +1,114 @@
+# =============================================================================
+# kube-prometheus-stack — AWS overrides (layered on top of common values via
+# -f values/charts/common/kube-prometheus-stack.yaml -f values/charts/AWS/...)
+#
+# ── Change per market ─────────────────────────────────────────────────────────
+#   ECR registry   : 490083271972.dkr.ecr.af-south-1.amazonaws.com → <account>.dkr.ecr.<region>.amazonaws.com
+#   Base domain    : dev.aibplus.vodacom.aws.corp → <env>.aibplus.<market>.aws.corp
+#   externalLabels : market / env — these are what the OpCo receiver uses to tell
+#                    one market's alerts from another. Wrong values here make an
+#                    incident unattributable.
+#
+# ── Prerequisite ──────────────────────────────────────────────────────────────
+#   StorageClass `aib-block-standard` must exist and be EBS-backed. k8s/storage_classes.yaml
+#   defines it only for GKE (pd.csi.storage.gke.io); on EKS the market must create an
+#   equivalent class under the SAME name (ebs.csi.aws.com, gp3, allowVolumeExpansion: true,
+#   volumeBindingMode: WaitForFirstConsumer) or the Prometheus and Alertmanager
+#   PVCs stay Pending.
+# =============================================================================
+
+global:
+  imageRegistry: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images"  # Change by AIB+ Market
+
+
+prometheus:
+  prometheusSpec:
+    # The image tag carries a `-distroless` suffix, which semver reads as a
+    # PRE-RELEASE — 3.14.0-distroless sorts BELOW 3.14.0, so operator feature
+    # gates keyed on ">= 3.x" silently fall back to older behaviour. Pin the
+    # version the operator reasons about to the plain release.
+    version: v3.14.0
+
+    # Without this, alert generatorURLs sent to the OpCo queue point at
+    # cluster-internal DNS and are unreachable from outside the cluster.
+    externalUrl: https://prometheus.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+
+    # Stamped onto every sample and every alert leaving this cluster. Several
+    # markets feed one OpCo receiver; without these the receiving side cannot
+    # tell whose cluster is firing.
+    externalLabels:
+      cluster: aibplus-dev-af-south-1   # Change by AIB+ Market
+      market: vodacom                   # Change by AIB+ Market
+      env: dev                          # Change by AIB+ Market
+      cloud: aws
+
+
+alertmanager:
+  alertmanagerSpec:
+    # Mounted by the operator at /etc/alertmanager/secrets/<name>/. Populated by
+    # ESO from Secrets Manager (eso-alertmanager-opco-webhook in
+    # values/charts/AWS/central-secret-operator.yaml) so no market's Lambda URL
+    # is committed to git.
+    #
+    # NOTE: Alertmanager will not start until this Secret exists. Deploy
+    # central-secret-operator first.
+    secrets:
+      - alertmanager-opco-webhook
+
+  config:
+    # Replaces the placeholder receiver in the common values, which accepted
+    # alerts and dropped them — including the AIBWatchdog heartbeat whose whole
+    # purpose is to prove this path works.
+    receivers:
+      - name: opco-queue
+        webhook_configs:
+            # url_file is read at notify time, so rotating the Secret does not
+            # need an Alertmanager restart. Requires Alertmanager >= v0.26.
+          - url_file: /etc/alertmanager/secrets/alertmanager-opco-webhook/url
+            send_resolved: true             # also notify when an alert stops firing
+            # The Lambda function URL must use AWS_IAM auth, not NONE — a NONE
+            # function URL is an unauthenticated public endpoint that anyone can
+            # post forged alerts to.
+            http_config:
+              follow_redirects: false
+
+
+grafana:
+  # Grafana is published on the public ingress and is deliberately NOT behind
+  # oauth2-proxy (it uses its own admin login), so its own hardening is the only
+  # control on that endpoint.
+  grafana.ini:
+    server:
+      domain: grafana.dev.aibplus.vodacom.aws.corp                # Change by AIB+ Market
+      root_url: https://grafana.dev.aibplus.vodacom.aws.corp/     # Change by AIB+ Market
+
+    security:
+      cookie_secure: true              # TLS is terminated at the AWS load balancer
+      # strict is safe while Grafana uses its own admin login. If Grafana is
+      # ever moved behind Dex/OIDC, change this to lax — strict drops the
+      # session cookie on the cross-site OAuth callback and login silently loops.
+      cookie_samesite: strict
+      strict_transport_security: true
+      content_security_policy: true
+      disable_gravatar: true           # stops per-user egress to gravatar.com
+      login_remember_days: 1
+
+    users:
+      allow_sign_up: false
+      allow_org_create: false
+      viewers_can_edit: false
+
+    auth.anonymous:
+      enabled: false
+
+    auth.basic:
+      # Password auth stays on for the admin login, but disable the legacy
+      # Basic-auth header path, which bypasses brute-force lockout.
+      enabled: false
+
+    snapshots:
+      external_enabled: false          # no publishing to snapshots.raintank.io
+
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false         # blocked outbound anyway; fails noisily

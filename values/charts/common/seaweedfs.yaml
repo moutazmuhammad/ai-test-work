@@ -1,0 +1,544 @@
+# SeaweedFS — cluster-wide S3 store (replaces MinIO): master x3 (Raft), volume x3, filer x2, s3 x2, all ClusterIP.
+# Filer metadata lives in mlrun-db.aib-data; external exposure comes from mesh-networking Istio VirtualServices.
+
+# Service names become seaweedfs-master, seaweedfs-volume, seaweedfs-filer,
+# seaweedfs-filer-client, seaweedfs-s3.
+fullnameOverride: seaweedfs
+
+global:
+  imageRegistry: ""
+  imagePullSecrets: ""
+  seaweedfs:
+    createClusterRole: true
+    image:
+      repository: ""
+    imagePullPolicy: IfNotPresent
+    loggingLevel: 1
+    # Keep cluster-internal mTLS off — Istio handles in-mesh mTLS via
+    # PeerAuthentication STRICT (see aib-platform mesh-security values).
+    enableSecurity: false
+    serviceAccountName: "seaweedfs"
+    automountServiceAccountToken: true
+    monitoring:
+      enabled: false
+    enableReplication: false
+    replicationPlacement: "000"
+    extraEnvironmentVars:
+      WEED_CLUSTER_DEFAULT: "sw"
+      WEED_CLUSTER_SW_MASTER: "{{ include \"seaweedfs.cluster.masterAddress\" . }}"
+      WEED_CLUSTER_SW_FILER: "{{ include \"seaweedfs.cluster.filerAddress\" . }}"
+
+image:
+  registry: europe-west1-docker.pkg.dev
+  repository: vf-grp-aib-dev-mirror/aib-plus-images/seaweedfs
+  tag: "4.35-fixed"
+
+# Master — Raft cluster, metadata only. Stays at 3 (not 2 like everything else)
+# because Raft needs an odd quorum: with 2, losing either pod goes read-only.
+master:
+  enabled: true
+  replicas: 3
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  port: 9333
+  grpcPort: 19333
+  metricsPort: 9327
+  ipBind: "0.0.0.0"
+
+  # Logical volume size before sealing and requesting a new one. Must stay under
+  # the 20Gi PVC so new volumes can be allocated; 5 GiB gives ~3 per disk.
+  volumeSizeLimitMB: 5000
+
+  # Rolls sidecar-less master-0/-1 into the mesh (raft is stuck 2-node without).
+  # Deploy the widened seaweedfs-internal policy first or this stalls on master-2.
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
+
+  # Hashicorp Raft is the supported flavour for ≥3-node masters; the legacy
+  # raftBootstrap path is single-node only.
+  raftHashicorp: true
+  raftBootstrap: true
+
+  resumeState: true
+  defaultReplication: "000"
+
+  data:
+    type: "persistentVolumeClaim"
+    size: "4Gi"
+    storageClass: "aib-block-performance"
+
+  logs:
+    type: "emptyDir"
+
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 250m
+      memory: 384Mi
+      ephemeral-storage: 1Gi
+
+  # Spread the three masters across nodes — quorum survives a single-node
+  # outage only when no two masters share a host.
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ template "seaweedfs.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: master
+          topologyKey: kubernetes.io/hostname
+
+  ingress:
+    enabled: false
+
+  extraEnvironmentVars:
+    WEED_MASTER_VOLUME_GROWTH_COPY_1: "7"
+    WEED_MASTER_VOLUME_GROWTH_COPY_2: "6"
+    WEED_MASTER_VOLUME_GROWTH_COPY_3: "3"
+    WEED_MASTER_VOLUME_GROWTH_COPY_OTHER: "1"
+
+# Volume servers — actual object data, one PVC per replica
+volume:
+  enabled: true
+  # 4 collections x 2 copies = 8 slots; 2 servers gave 6 and wedged at Free: 0
+  # ("Not enough data nodes found!" -> hung S3 PUTs, MLRun read timeouts).
+  replicas: 3
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  port: 8080
+  grpcPort: 18080
+  metricsPort: 9327
+  ipBind: "0.0.0.0"
+
+  # Reject writes once any disk drops below 5% free — leaves headroom for
+  # compaction and prevents the cluster from wedging on a full volume.
+  minFreeSpacePercent: 5
+
+  # Pinned: maxVolumes 0 derives 20Gi/volumeSizeLimitMB = 3 per server, capping
+  # us at 6. Volumes fill lazily; minFreeSpacePercent guards the real disk.
+  dataDirs:
+    - name: data1
+      type: "persistentVolumeClaim"
+      size: "20Gi"
+      storageClass: "aib-block-standard"
+      maxVolumes: 8
+
+  resizeHook:
+    enabled: true
+    # Minimal kubectl-only image (replaces alpine/k8s to reduce CVE surface).
+    image: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/alpine-k8s:aibplus-v1
+
+  logs:
+    type: "emptyDir"
+
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+
+  compactionMBps: "50"
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 500m
+      memory: 768Mi
+      ephemeral-storage: 1Gi
+
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ template "seaweedfs.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: volume
+          topologyKey: kubernetes.io/hostname
+
+  ingress:
+    enabled: false
+
+# Filer — POSIX-style namespace + S3 metadata, MySQL-backed
+filer:
+  enabled: true
+  replicas: 2
+
+  # Must stay in the mesh: it writes the chunks and seaweedfs-internal allows by
+  # source namespace. A hand-set inject "false" 403'd every write on 2026-08-07.
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  port: 8888
+  grpcPort: 18888
+  metricsPort: 9327
+  ipBind: "0.0.0.0"
+
+  defaultReplicaPlacement: "001"
+  disableDirListing: false
+  dirListLimit: 100000
+
+  # We use MySQL (leveldb2 disabled), so the filer is fully stateless on disk
+  # and does not need a PVC — keep enablePVC off and use emptyDir for data.
+  enablePVC: false
+
+  data:
+    type: "emptyDir"
+
+  logs:
+    type: "emptyDir"
+
+  # The filer writes a UNIX socket to /tmp, which readOnlyRootFilesystem blocks —
+  # so mount an emptyDir there.
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 250m
+      memory: 384Mi
+      ephemeral-storage: 1Gi
+
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ template "seaweedfs.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: filer
+          topologyKey: kubernetes.io/hostname
+
+  ingress:
+    enabled: false
+
+  # MySQL filer store. User and database come from the MySQL initdb hook;
+  # the password arrives via secretExtraEnvironmentVars below.
+  extraEnvironmentVars:
+    WEED_LEVELDB2_ENABLED: "false"
+    WEED_MYSQL_ENABLED: "true"
+    # With architecture: replication the writable endpoint is <fullname>-primary.
+    # There is no `mlrun-db` Service, only mlrun-db-primary and mlrun-db-secondary.
+    WEED_MYSQL_HOSTNAME: "mlrun-db-primary.aib-data.svc.cluster.local"
+    WEED_MYSQL_PORT: "3306"
+    WEED_MYSQL_USERNAME: "seaweedfs"
+    WEED_MYSQL_DATABASE: "seaweedfs"
+    WEED_MYSQL_CONNECTION_MAX_IDLE: "5"
+    WEED_MYSQL_CONNECTION_MAX_OPEN: "75"
+    WEED_MYSQL_CONNECTION_MAX_LIFETIME_SECONDS: "600"
+    WEED_MYSQL_INTERPOLATEPARAMS: "true"
+    WEED_FILER_OPTIONS_RECURSIVE_DELETE: "false"
+    WEED_FILER_BUCKETS_FOLDER: "/buckets"
+
+  # Same Secret the MySQL bootstrap reads; must exist before the MySQL chart installs.
+  #   kubectl create secret generic seaweedfs-db-credentials --from-literal=mariadb-password=<pw> -n aib-data
+  secretExtraEnvironmentVars:
+    WEED_MYSQL_PASSWORD:
+      secretKeyRef:
+        name: seaweedfs-db-credentials
+        key: mariadb-password
+
+  # Embedded S3 disabled in favour of the standalone s3 deployment below, so the
+  # gateway scales independently behind its own ClusterIP Service.
+  s3:
+    enabled: false
+
+# S3 gateway — the endpoint MLRun, Nuclio and pipelines talk to
+s3:
+  enabled: true
+  replicas: 2
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  bindAddress: 0.0.0.0
+  port: 8333
+  httpsPort: 0
+  metricsPort: 9327
+
+  # Auth from seaweedfs-s3-config (existingConfigSecret, so no auto-generated secret).
+  # Identities: anvAdmin (full, for ops) and mlrunAppWriter (bucket `mlrun`; must match minio-credentials).
+  enableAuth: true
+  existingConfigSecret: seaweedfs-s3-config
+
+  # Pre-create MLRun's artifact bucket: S3 returns NoSuchBucket and s3fs won't auto-create.
+  # `mlpipeline` (needs pipelines.enabled) and `models` (models:// registry) omitted for now.
+  createBuckets:
+    - name: mlrun
+    - name: mlpipeline
+
+  # Resources for the bucket-creation Job; without them the require-resource-limits
+  # Kyverno policy blocks it.
+  createBucketsHook:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+        ephemeral-storage: 50Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+
+  service:
+    type: ClusterIP
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 250m
+      memory: 384Mi
+      ephemeral-storage: 1Gi
+
+  # Spread the two S3 gateways across nodes so the Service still has an
+  # endpoint when a node goes down.
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ template "seaweedfs.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: s3
+          topologyKey: kubernetes.io/hostname
+
+  logs:
+    type: "emptyDir"
+
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /status
+      scheme: HTTP
+    initialDelaySeconds: 20
+    periodSeconds: 60
+    successThreshold: 1
+    failureThreshold: 20
+    timeoutSeconds: 10
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /status
+      scheme: HTTP
+    initialDelaySeconds: 15
+    periodSeconds: 15
+    successThreshold: 1
+    failureThreshold: 100
+    timeoutSeconds: 10
+
+  ingress:
+    enabled: false
+
+# Admin dashboard — operator console on 23646 for S3 keys/buckets, cluster status, topology.
+# Single-replica by design (leader-elected, state in dataDir) — do NOT scale to 2.
+admin:
+  enabled: true
+  replicas: 1
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  port: 23646
+  grpcPort: 33646
+
+  # Credentials are read from the seaweedfs-admin-credentials Secret (declared
+  # in scripts/secrets.yaml). Auth IS required — without it the UI is open.
+  secret:
+    existingSecret: seaweedfs-admin-credentials
+    userKey: adminUser
+    pwKey: adminPassword
+
+  # Persistent state for maintenance schedules, history, etc. Without this,
+  # admin loses configuration on every pod restart.
+  dataDir: /data
+  data:
+    type: persistentVolumeClaim
+    size: 2Gi
+    storageClass: "aib-block-performance"
+
+  logs:
+    type: emptyDir
+
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 250m
+      memory: 384Mi
+      ephemeral-storage: 1Gi
+
+  service:
+    type: ClusterIP
+
+  ingress:
+    enabled: false
+
+  # Single replica: empty affinity skips the chart's default podAntiAffinity,
+  # which is harmless at replicas=1 but produces noisy scheduler events.
+  affinity: ""
+
+# Disabled subsystems
+sftp:
+  enabled: false
+
+cosi:
+  enabled: false
+
+allInOne:
+  enabled: false
+
+worker:
+  enabled: true
+  replicas: 2
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  metricsPort: 9327
+  # Leave blank: the chart auto-derives <fullname>-admin.<ns>:<http>.<grpc>, which is
+  # the format `weed worker -admin=` expects when admin.enabled is true.
+  adminServer: ""
+
+  # "default" = vacuum, volume_balance, ec_balance, admin_script.
+  # Skip "heavy" until we turn on erasure coding for cold buckets.
+  jobType: "default"
+  maxDetect: 1
+  maxExecute: 4
+
+  # Worker runs as a Deployment (multi-replica), so a PVC is not appropriate.
+  # emptyDir is fine — the working dir holds only transient task state.
+  data:
+    type: "emptyDir"
+  logs:
+    type: "emptyDir"
+
+  extraVolumeMounts: |
+    - name: tmp
+      mountPath: /tmp
+  extraVolumes: |
+    - name: tmp
+      emptyDir: {}
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+
+  affinity: |
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ template "seaweedfs.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: worker
+          topologyKey: kubernetes.io/hostname

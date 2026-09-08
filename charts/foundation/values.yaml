@@ -1,0 +1,59 @@
+namespaces:
+  # Istio base + istiod (base, istiod)
+  - name: istio-system
+    labels:
+      app.kubernetes.io/part-of: cloud-platform
+      platform/component: istio
+
+  # # ArgoCD (argo-cd/)
+  # - name: argocd
+  #   labels:
+  #     app.kubernetes.io/part-of: cloud-platform
+  #     platform/component: argocd
+  #     istio-injection: enabled
+
+  # # Observability (kiali)
+  # - name: observability
+  #   labels:
+  #     app.kubernetes.io/part-of: cloud-platform
+  #     platform/component: observability
+
+  # Platform Routing - deployed in istio-ingress (no extra namespace needed)
+
+# Each entry above may also include the optional `limitRange` and
+# `resourceQuota` fields. Both `spec` blocks are passed through verbatim
+# to the Kubernetes API, so any field accepted by LimitRangeSpec /
+# ResourceQuotaSpec is supported.
+#
+# Example:
+#
+#   - name: aib-system
+#     labels:
+#       istio-injection: enabled
+#     limitRange:
+#       name: default-limits          # optional, defaults to "default-limits"
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "500m"
+#               memory: "512Mi"
+#             defaultRequest:
+#               cpu: "100m"
+#               memory: "128Mi"
+#             max:
+#               cpu: "4"
+#               memory: "8Gi"
+#             min:
+#               cpu: "10m"
+#               memory: "32Mi"
+#     resourceQuota:
+#       name: default-quota           # optional, defaults to "default-quota"
+#       spec:
+#         hard:
+#           requests.cpu: "10"
+#           requests.memory: "20Gi"
+#           limits.cpu: "20"
+#           limits.memory: "40Gi"
+#           pods: "50"
+#           persistentvolumeclaims: "20"

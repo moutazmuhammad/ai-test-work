@@ -1,0 +1,104 @@
+{{- if .Values.googleCloud.setupIAM.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "central-secret-operator.fullname" . }}-gcp-iam-setup
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      {{- with .Values.googleCloud.setupIAM.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: initial-iam-setup
+          {{- with .Values.googleCloud.setupIAM.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ .Values.googleCloud.setupIAM.image.repository }}:{{ .Values.googleCloud.setupIAM.image.tag }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+
+              # Construct the full SA Email
+              SA_EMAIL="${gcp_sa_name}@${project_id}.iam.gserviceaccount.com"
+
+              # Create Service Account
+              if ! gcloud iam service-accounts list --filter="email=${gcp_sa_name}" --format="value(email)" | grep -q "${gcp_sa_name}"; then
+                gcloud iam service-accounts create ${gcp_sa_name} --display-name="Service Account for ESO"
+              fi
+
+              # Enable Secrets Manager API
+              gcloud services enable secretmanager.googleapis.com --project=${project_id}
+
+              # Assign Secret Accessor Role
+              gcloud projects add-iam-policy-binding ${target_project_id} \
+                --member="serviceAccount:${SA_EMAIL}" \
+                --role="roles/secretmanager.secretAccessor"
+
+          {{- with .Values.googleCloud.setupIAM.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: gcp_sa_name
+              value: {{ .Values.googleCloud.setupIAM.serviceAccountName | quote }}
+            - name: project_id
+              value: {{ .Values.googleCloud.setupIAM.projectId | quote }}
+            - name: target_project_id
+              value: {{ .Values.clusterSecretStore.targetProjectId | quote }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      containers:
+        - name: workload-identity-binding
+          {{- with .Values.googleCloud.setupIAM.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ .Values.googleCloud.setupIAM.image.repository }}:{{ .Values.googleCloud.setupIAM.image.tag }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # Construct the full GSA email
+              GSA_EMAIL="${gcp_sa_name}@${project_id}.iam.gserviceaccount.com"
+
+              # Wait until the Kubernetes Service Account exists in the namespace
+              echo "Waiting for Kubernetes Service Account ${kubernetes_sa_name}..."
+              until kubectl get serviceaccount ${kubernetes_sa_name} -n ${namespace}; do
+                sleep 5
+              done
+
+              # Role Binding after KSA creation
+              gcloud iam service-accounts add-iam-policy-binding \
+                "${GSA_EMAIL}" \
+                --role="roles/iam.workloadIdentityUser" \
+                --member="serviceAccount:${project_id}.svc.id.goog[${namespace}/${kubernetes_sa_name}]" \
+                --project=${project_id}
+          {{- with .Values.googleCloud.setupIAM.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: project_id
+              value: {{ .Values.googleCloud.setupIAM.projectId | quote }}
+            - name: gcp_sa_name
+              value: {{ .Values.googleCloud.setupIAM.serviceAccountName | quote }}
+            - name: namespace
+              value: {{ .Values.serviceAccount.namespace | quote }}
+            - name: kubernetes_sa_name
+              value: {{ .Values.serviceAccount.name }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      restartPolicy: OnFailure
+{{- end }}

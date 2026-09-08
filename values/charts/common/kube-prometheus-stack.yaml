@@ -1,0 +1,532 @@
+namespaceOverride: "aib-ops"
+
+# Fixes the resource names the istio VirtualServices point at, so they no longer
+# depend on the Helm release name.
+fullnameOverride: "kube-prometheus-stack"
+
+global:
+  imageRegistry: "europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images"
+
+customRules: {}
+
+additionalPrometheusRulesMap: 
+  aib-platform-health:
+    groups:
+      - name: aib-platform-health
+        rules:
+          - alert: AIBWatchdog
+            expr: vector(1)                    # always true, so the alert always fires
+            labels:
+              severity: none                   # plumbing, not an incident
+              aib_class: heartbeat             # matched by the 2m route below
+            annotations:
+              summary: >-
+                Always-firing heartbeat. If this alert has NOT been seen at the
+                OpCo receiver within the last ~4 minutes (2x the 2m repeat
+                interval), the alert delivery pipeline itself is broken —
+                treat as a platform incident, not a missing application alert.
+
+defaultRules:
+  create: false
+
+alertmanager:
+  enabled: true
+  service:
+    port: 9093
+
+  alertmanagerSpec:
+    replicas: 2
+
+    image:
+      repository: alertmanager
+      tag: v0.34.0
+
+    # Persists silences and notification state across restarts.
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: aib-block-standard
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 2Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+        ephemeral-storage: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+        ephemeral-storage: 256Mi
+
+  config:
+    route:
+      receiver: opco-queue
+      group_by: [alertname, namespace]
+      group_wait: 30s               # batch related alerts before the first notify
+      group_interval: 5m            # min gap between updates for the same group
+      repeat_interval: 4h           # re-notify if still firing
+      routes:
+        # The heartbeat must arrive often so that its absence is detectable.
+        - matchers:
+            - 'aib_class = "heartbeat"'
+          receiver: opco-queue
+          repeat_interval: 2m
+  
+    # Every receiver named in a route must exist here, or Alertmanager rejects the config.
+    receivers:
+      - name: opco-queue
+        # Webhook URL comes from Layer 3; until then alerts are dropped, not delivered.
+        # webhook_configs:
+        #   - url: '${ALERT_BRIDGE_URL}'
+        #     send_resolved: true             # also notify when an alert stops firing
+
+    templates:
+      - '/etc/alertmanager/config/*.tmpl'
+
+  tplConfig: false
+  templateFiles: {}
+
+
+  serviceAccount:
+    create: true
+    name: "alertmanager"
+    annotations: {}
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  
+grafana:
+  enabled: true
+  fullnameOverride: grafana
+
+  image:
+    repository: grafana
+    tag: 13.2.0
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 1Gi
+
+  sidecar:
+    image:
+      repository: k8s-sidecar
+      tag: 2.10.1
+    
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+        ephemeral-storage: 256Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 1Gi
+    
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      # NOT "ALL": that makes the chart emit a ClusterRole granting the Grafana
+      # ServiceAccount get/watch/list on every ConfigMap AND every Secret in the
+      # cluster, and lets any tenant namespace inject a dashboard into the
+      # platform Grafana by labelling a ConfigMap. Keep this list and
+      # rbac.namespaces below in sync.
+      searchNamespace: aib-ops,aib-system,aib-data,aib-auth,aib-serving,aib-governance,istio-system,cert-manager,external-secrets,kyverno,kube-system
+
+  # Namespaced RBAC: one Role per namespace above instead of a cluster-wide
+  # ClusterRole over all ConfigMaps and Secrets.
+  rbac:
+    create: true
+    namespaced: true
+    namespaces:
+      - aib-system
+      - aib-data
+      - aib-auth
+      - aib-serving
+      - aib-governance
+      - istio-system
+      - cert-manager
+      - external-secrets
+      - kyverno
+      - kube-system
+  
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+
+  # Cluster dashboard: pod readiness, CPU usage, and memory vs limit.
+  dashboards:
+    default:
+      kubernetes-custom-dashboard:
+        json: |
+          {
+            "editable": true,
+            "id": null,
+            "title": "Cluster Dashboard",
+            "tags": ["aibplus"],
+            "schemaVersion": 38,
+            "style": "dark",
+            "time": { "from": "now-1h", "to": "now" },
+            "refresh": "10s",
+            "panels": [
+              {
+                "type": "state-timeline",
+                "title": "Pod Readiness Status",
+                "description": "Monitors active pod readiness status across the cluster. Green (1) indicates the pod is Ready, while Red (0) indicates the pod is Not Ready or offline.",
+                "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+                "id": 1,
+                "targets": [
+                  {
+                    "datasource": { "type": "prometheus" },
+                    "editorMode": "code",
+                    "expr": "kube_pod_status_ready{namespace=~\"$namespace\", condition=\"true\"}",
+                    "legendFormat": "{{pod}}",
+                    "range": true,
+                    "refId": "A"
+                  }
+                ],
+                "fieldConfig": {
+                  "defaults": {
+                    "custom": {
+                      "fillOpacity": 70,
+                      "lineWidth": 0
+                    },
+                    "mappings": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "0": { "text": "Not Ready", "color": "red" },
+                          "1": { "text": "Ready", "color": "green" }
+                        }
+                      }
+                    ],
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "red", "value": null },
+                        { "color": "green", "value": 1 }
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "type": "timeseries",
+                "title": "Pod CPU Usage",
+                "description": "Displays the raw CPU core consumption per pod computed over a 5-minute window.",
+                "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+                "id": 2,
+                "targets": [
+                  {
+                    "datasource": { "type": "prometheus" },
+                    "editorMode": "code",
+                    "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\", container!=\"\"}[5m])) by (pod)",
+                    "legendFormat": "{{pod}}",
+                    "range": true,
+                    "refId": "A"
+                  }
+                ],
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "short"
+                  }
+                }
+              },
+              {
+                "type": "timeseries",
+                "title": "Pod Memory Usage vs Limit (%)",
+                "description": "Displays the real-time memory usage as a percentage of the pods configured limit.",
+                "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+                "id": 4,
+                "targets": [
+                  {
+                    "datasource": { "type": "prometheus" },
+                    "editorMode": "code",
+                    "expr": "(sum(container_memory_working_set_bytes{namespace=~\"$namespace\", container!=\"\"}) by (pod) / sum(kube_pod_container_resource_limits{namespace=~\"$namespace\", resource=\"memory\"}) by (pod)) * 100",
+                    "legendFormat": "{{pod}}",
+                    "range": true,
+                    "refId": "A"
+                  }
+                ],
+                "fieldConfig": {
+                  "defaults": {
+                    "unit": "percent",
+                    "min": 0,
+                    "thresholds": {
+                      "mode": "absolute",
+                      "steps": [
+                        { "color": "green", "value": null },
+                        { "color": "orange", "value": 80 },
+                        { "color": "red", "value": 95 }
+                      ]
+                    }
+                  }
+                }
+              }
+            ],
+            "templating": {
+              "list": [
+                {
+                  "current": {},
+                  "datasource": { "type": "prometheus" },
+                  "definition": "label_values(kube_pod_status_ready, namespace)",
+                  "hide": 0,
+                  "includeAll": true,
+                  "multi": false,
+                  "name": "namespace",
+                  "options": [],
+                  "query": {
+                    "query": "label_values(kube_pod_status_ready, namespace)",
+                    "refId": "StandardVariableQuery"
+                  },
+                  "refresh": 1,
+                  "regex": "",
+                  "skipUrlSync": false,
+                  "sort": 1,
+                  "type": "query"
+                }
+              ]
+            }
+          }
+
+
+  testFramework:
+    enabled: false
+
+  initChownData:
+    enabled: false
+
+  extraVolumes:
+    - name: tmp
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: tmp
+      mountPath: /tmp
+
+  # Admin login read from the ESO-managed secret instead of a value in git.
+  admin:
+    existingSecret: "grafana-credentials"
+    userKey: admin-user
+    passwordKey: admin-password
+
+  downloadDashboardsImage:
+    repository: curl
+    tag: 8.21.0
+
+  downloadDashboards:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+        ephemeral-storage: 50Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+        ephemeral-storage: 256Mi
+  
+  plugins: []
+
+  # Air-gapped settings: VPC-SC blocks plugin downloads and would crash the pod.
+  grafana.ini:
+    plugins:
+      # Grafana 13.2 preinstalls grafana-advisor-app; the download is blocked by
+      # VPC-SC and, with preinstall_async off, kills the pod. Skip preinstall.
+      preinstall_disabled: true
+      preinstall_async: false
+      disable_plugins: grafana-pyroscope-app,grafana-exploretraces-app,grafana-metricsdrilldown-app,grafana-lokiexplore-app,grafana-advisor-app,elasticsearch
+      plugin_admin_enabled: false
+      public_key_retrieval_disabled: true
+    analytics:
+      check_for_plugin_updates: false
+
+  env:
+    GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    GF_PLUGINS_PREINSTALL_ASYNC: "false"
+    GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+    GF_PLUGINS_PUBLIC_KEY_RETRIEVAL_DISABLED: "true"
+
+  
+kubernetesServiceMonitors:
+  enabled: true                  # master switch for the exporters below
+kubeApiServer:
+  enabled: false
+kubelet:
+  enabled: true                  # cAdvisor: container_cpu_* / container_memory_*
+kubeControllerManager:
+  enabled: false
+coreDns:
+  enabled: false
+kubeDns:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Exposes Kubernetes object state as metrics: pod readiness and the limits a pod
+# declared. The dashboard's readiness panel and memory-vs-limit ratio need it.
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  namespaceOverride: "aib-ops"
+  image:
+    repository: kube-state-metrics
+    tag: v2.20.0
+  prometheus:
+    monitor:
+      enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+
+# Needs hostNetwork/hostPath, which the aib-ops Kyverno policies reject.
+nodeExporter:
+  enabled: false
+
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    image:
+      repository: prometheus
+      tag: v3.14.0-distroless
+
+    replicas: 1
+    retention: 10d
+    retentionSize: 18GiB         # stay under the 20Gi volume below
+    scrapeInterval: 30s
+
+    # Without this the TSDB sits on emptyDir and is wiped on every restart.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: aib-block-standard
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+        ephemeral-storage: 512Mi
+      limits:
+        cpu: 1
+        memory: 3Gi
+        ephemeral-storage: 1Gi
+
+    # Chart default scrapes only objects labelled release=<name>; scrape all instead,
+    # since platform components ship ServiceMonitors without that label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    serviceMonitorNamespaceSelector: &platformNamespaces
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values:
+            - aib-ops
+            - aib-system
+            - aib-data
+            - aib-auth
+            - aib-serving
+            - aib-governance
+            - istio-system
+            - cert-manager
+            - external-secrets
+            - kyverno
+            - kube-system
+    podMonitorNamespaceSelector: *platformNamespaces
+    probeNamespaceSelector: *platformNamespaces
+    scrapeConfigNamespaceSelector: *platformNamespaces
+    ruleNamespaceSelector: *platformNamespaces
+
+
+# Reconciles the CRs this chart creates (Prometheus, Alertmanager, ServiceMonitor,
+# PrometheusRule) into real StatefulSets and scrape config. Nothing runs without it.
+prometheusOperator:
+  image:
+    repository: prometheus-operator
+    tag: v0.93.1
+
+  prometheusConfigReloader:
+    image:
+      repository: prometheus-config-reloader
+      tag: v0.93.1
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+        ephemeral-storage: 50Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+        ephemeral-storage: 256Mi
+
+  # Base images the operator injects into the CRs it creates.
+  prometheusDefaultBaseImage: prometheus
+  alertmanagerDefaultBaseImage: alertmanager
+
+  # Thanos is disabled; this only keeps the operator's flag on the mirror layout.
+  thanosImage:
+    repository: thanos
+
+  # Validates PrometheusRule syntax at admission. The apiserver reaches it on
+  # port 10250, opened by the prometheus-operator-webhook NetworkPolicy.
+  admissionWebhooks:
+    enabled: true
+    # On a fresh install the operator has no endpoints yet, so the webhook would
+    # reject this chart's own PrometheusRule. Ignore on install, Fail afterwards.
+    failurePolicy: IgnoreOnInstallOnly
+    # cert-manager issues the serving cert, so the certgen Job (and its
+    # unmirrored ghcr.io image) is not needed.
+    certManager:
+      enabled: true
+    patch:
+      enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+      ephemeral-storage: 100Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 512Mi

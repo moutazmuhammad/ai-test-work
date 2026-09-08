@@ -1,0 +1,900 @@
+networkPolicies:
+##########################################################
+######################## aib-auth ########################
+  - name: deny-all
+    namespace: aib-auth
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # calling external endpoints like oauth2, dex, NAM
+              port: 443
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector: {}
+          ports:
+            - protocol: TCP # istio metrics
+              port: 15020 
+######################## oauth2-proxy
+  - name: oauth2-proxy
+    namespace: aib-auth
+    spec:
+      podSelector:
+        matchLabels:
+          app: oauth2-proxy
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-system
+              podSelector:
+                matchLabels:
+                  app: istio-ingressgateway # external traffic directly to oauth2-proxy
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-system
+              podSelector: {} # most pods in aib-system namespace call oauth2-proxy
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aibplus-profile
+              podSelector: {} # notebooks in aibplus-profile namespace call oauth2-proxy
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-data
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/component: admin
+          ports:
+            - protocol: TCP
+              port: 4180
+
+######################## dex
+  - name: dex
+    namespace: aib-auth
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: dex
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-system
+              podSelector:
+                matchLabels:
+                  app: istio-ingressgateway # external traffic directly to dex
+          ports:
+            - protocol: TCP
+              port: 5556
+
+
+##########################################################
+######################## aib-data ########################
+  - name: deny-all
+    namespace: aib-data
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # oauth2-proxy
+              port: 4180
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector: {}
+          ports:
+            - protocol: TCP # istio metrics
+              port: 15020
+######################## mysql
+  - name: mysql
+    namespace: aib-data
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: mysql
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-system
+              podSelector: {} # most pods in aib-system namespace call mysql
+            - podSelector:
+                matchLabels:
+                    app.kubernetes.io/name: seaweedfs
+          ports:
+            - protocol: TCP
+              port: 3306
+        # mysqld-exporter on both mysql releases, scraped by the aib-ops Prometheus.
+        # Match on /name: the pod's /instance is kube-prometheus-stack-prometheus.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - protocol: TCP # mysqld-exporter metrics
+              port: 9104
+######################## intra-mysql
+  - name: intra-mysql                                                                          
+    namespace: aib-data
+    spec:
+      podSelector:
+        matchLabels:                                                                           
+          app.kubernetes.io/name: mysql
+      policyTypes:                                                                             
+        - Ingress
+        - Egress
+      ingress:
+      - from:
+        - podSelector:                                                                         
+            matchLabels:
+              app.kubernetes.io/name: mysql                                                    
+        ports:                                                                                 
+        - port: 3306
+          protocol: TCP
+      egress:
+      - to:                                                                                    
+        - podSelector:
+            matchLabels:                                                                       
+              app.kubernetes.io/name: mysql                                                    
+        ports:
+        - port: 3306
+          protocol: TCP
+
+######################## seaweedfs
+  - name: seaweedfs
+    namespace: aib-data
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: seaweedfs
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-system
+              podSelector: {} # most pods in aib-system namespace call seaweedfs
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-serving
+              podSelector: {} # nuclio functions
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aibplus-profile
+              podSelector: {} # notebooks in aibplus-profile namespace call seaweedfs
+          ports:
+            - protocol: TCP
+              port: 8333
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-system
+              podSelector:
+                matchLabels:
+                  app: istio-ingressgateway # external traffic directly to seaweedfs ui
+          ports:
+            - protocol: TCP
+              port: 23646
+      egress:
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: mysql
+          ports:
+            - protocol: TCP
+              port: 3306
+######################## intra-seaweedfs
+  - name: intra-seaweedfs
+    namespace: aib-data
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: seaweedfs
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: seaweedfs
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+      egress:
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: seaweedfs
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+  - name: intra-seaweedfs-hook
+    namespace: aib-data
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: seaweedfs
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: seaweedfs
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+      egress:
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: seaweedfs
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: seaweedfs
+######################## redis
+  - name: redis
+    namespace: aib-data
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-system
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: mlrun
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-serving
+              podSelector: {}
+          ports:
+            - protocol: TCP
+              port: 6379
+        # Sentinel gossip + replication between the redis node pods themselves.
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: redis
+          ports:
+            - protocol: TCP # redis replication
+              port: 6379
+            - protocol: TCP # sentinel
+              port: 26379
+        # redis-exporter sidecar, scraped by the aib-ops Prometheus.
+        # NOTE: kube-prometheus-stack labels the pod
+        # app.kubernetes.io/instance=kube-prometheus-stack-prometheus, so match on /name instead — /instance: prometheus matches nothing.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - protocol: TCP # redis-exporter metrics
+              port: 9121
+      egress:
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: redis
+          ports:
+            - protocol: TCP # redis replication
+              port: 6379
+            - protocol: TCP # sentinel
+              port: 26379
+        # kubectl sidecar moves the isMaster label after a failover, so the redis-master Service follows the newly elected master.
+        - ports:
+            - protocol: TCP # kube-apiserver
+              port: 443
+
+
+##########################################################
+####################### aib-system #######################
+  - name: deny-all
+    namespace: aib-system
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # kube-api server
+              port: 443
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # oauth2-proxy
+              port: 4180
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                    app.kubernetes.io/instance: prometheus # metrics
+          ports:
+            - protocol: TCP # istio metrics
+              port: 15020
+            - protocol: TCP # kubeflow-pipeline uptime metric
+              port: 8888
+######################## ui
+  - name: ui
+    namespace: aib-system
+    spec:
+      podSelector: {}
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-system
+              podSelector:
+                matchLabels:
+                  app: istio-ingressgateway # external traffic directly to ml-tools ui
+
+######################## databases
+  - name: databases
+    namespace: aib-system
+    spec:
+      podSelector: {}
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-data
+              podSelector:
+                matchLabels:
+                    app.kubernetes.io/name: mysql
+          ports:
+            - protocol: TCP
+              port: 3306
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-data
+              podSelector:
+                matchLabels:
+                    app.kubernetes.io/name: seaweedfs
+          ports:
+            - protocol: TCP
+              port: 8333
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-data
+              podSelector:
+                matchLabels:
+                    app.kubernetes.io/name: redis
+          ports:
+            - protocol: TCP
+              port: 6379
+
+######################## intra-ml-tools
+  - name: intra-ml-tools
+    namespace: aib-system
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - podSelector: {}
+      egress:
+        - to:
+            - podSelector: {}
+
+######################## profile
+  - name: profile
+    namespace: aib-system
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: aibplus-profile
+          ports:
+            - protocol: TCP
+              port: 8080  # MLMD, mlrun-api
+            - protocol: TCP
+              port: 8888 # Pipelines
+            - protocol: TCP
+              port: 8070 # nuclio
+            - protocol: TCP
+              port: 4443 # kubeflow poddefault
+      egress:
+        - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: aibplus-profile
+          ports:
+            - protocol: TCP
+              port: 8888 # Jupyter
+
+
+##########################################################
+##################### aibplus-profile #####################
+  - name: deny-all
+    namespace: aibplus-profile
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # kube-api server
+              port: 443
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # oauth2-proxy
+              port: 4180
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector: {}
+          ports:
+            - protocol: TCP # istio metrics
+              port: 15020
+
+######################## databases
+  - name: databases
+    namespace: aibplus-profile
+    spec:
+      podSelector: {}
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-data
+              podSelector:
+                matchLabels:
+                    app.kubernetes.io/name: seaweedfs
+          ports:
+            - protocol: TCP
+              port: 8333
+
+######################## ml-tools
+  - name: ml-tools
+    namespace: aibplus-profile
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: aib-system
+          ports:
+          - protocol: TCP
+            port: 8080  # MLMD, mlrun-api
+          - protocol: TCP
+            port: 8888 # Pipelines
+          - protocol: TCP
+            port: 8070 # nuclio
+          - protocol: TCP
+            port: 4443 # kubeflow poddefault
+      ingress:
+        - from:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: aib-system
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: istio-system
+            podSelector:
+              matchLabels:
+                app: istio-ingressgateway # external traffic directly to oauth2-proxy
+          ports:
+            - protocol: TCP
+              port: 8888 # Jupyter
+
+
+#################### aib-ops ####################
+######################## ops-ui
+  - name: ops-ui
+    namespace: aib-ops
+    spec:
+      podSelector: {}
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-system
+              podSelector:
+                matchLabels:
+                  app: istio-ingressgateway # external traffic directly to prometheus & grafana
+          ports:
+            - protocol: TCP
+              port: 3000 # grafana
+            - protocol: TCP
+              port: 9090 # prometheus
+      egress:
+        - to:
+          - namespaceSelector: {}
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # kube-apiserver (kube-state-metrics)
+              port: 443
+            - protocol: TCP # kubelet/cAdvisor on node IPs, which are not pods
+              port: 10250
+######################## intra-ops
+  - name: intra-ops
+    namespace: aib-ops
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - podSelector: {}
+      egress:
+        - to:
+            - podSelector: {}
+######################## prometheus-operator-webhook
+  - name: prometheus-operator-webhook
+    namespace: aib-ops
+    spec:
+      podSelector:
+        matchLabels:
+          app: kube-prometheus-stack-operator
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 10250 # kube-apiserver -> PrometheusRule admission webhook
+
+
+#################### external-secrets ####################
+  - name: deny-all
+    namespace: external-secrets
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # GKE metadata server (Workload Identity) / AWS IMDS (IRSA)
+              port: 80
+            - protocol: TCP # kube-api server & external cloud providers if required
+              port: 443
+            - protocol: TCP # GKE Workload Identity metadata server
+              port: 988
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+            - protocol: TCP
+              port: 10250 # webhook
+
+
+#################### kyverno ####################
+  - name: deny-all
+    namespace: kyverno
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # kube-api server
+              port: 443
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+            - protocol: TCP
+              port: 9443 # admission
+            - protocol: TCP
+              port: 8000 # metrics
+
+
+
+#################### istio-system ####################
+######################## istio
+  - name: istio
+    namespace: istio-system 
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - {}
+      egress:
+        - {}
+
+#################### argocd-agent ####################
+  - name: deny-all
+    namespace: argocd-agent
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # argocd hub principal
+              port: 443
+      ingress: []
+
+######################## local-redis
+  - name: local-redis
+    namespace: argocd-agent
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: argocd-redis
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - podSelector: {}
+          ports:
+            - protocol: TCP
+              port: 6379
+######################## metrics
+  - name: metrics
+    namespace: argocd-agent
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: prometheus
+          ports:
+            - protocol: TCP # argocd-agent metrics
+              port: 8181
+            - protocol: TCP # argocd-agent controller metrics
+              port: 8084
+
+######################## intra-argocd-agent
+  - name: intra-argocd-agent
+    namespace: argocd-agent
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      ingress:
+        - from:
+            - podSelector: {}
+      egress:
+        - to:
+            - podSelector: {}
+
+
+#################### aib-governance ####################
+
+# Policy Reporter watches PolicyReport CRs via the kube-apiserver, not Kyverno pods.
+# VERIFY ports against the actual policy-reporter Helm chart version.
+  - name: deny-all
+    namespace: aib-governance
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # kube-api server — watches PolicyReport/ClusterPolicyReport CRs
+              port: 443
+      ingress: []
+######################## metrics-and-ui
+  - name: metrics-and-ui
+    namespace: aib-governance
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: prometheus
+          ports:
+            - protocol: TCP # VERIFY: policy-reporter default metrics/REST port
+              port: 8080
+ 
+
+#################### aib-serving ####################
+  - name: deny-all
+    namespace: aib-serving
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+        - Egress
+      egress:
+        - ports:
+            - protocol: UDP # DNS resolution
+              port: 53
+            - protocol: TCP # DNS resolution
+              port: 53
+            - protocol: TCP # istio (mTLS)
+              port: 15012
+            - protocol: TCP # istio (Plaintext)
+              port: 15010
+            - protocol: TCP # istio healthcheck
+              port: 15021
+      ingress:
+        - ports:
+            - protocol: TCP
+              port: 15021 # istio healthcheck
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: prometheus
+          ports:
+            - protocol: TCP # istio metrics
+              port: 15020
+######################## redis & proxy & rai
+  - name: egress
+    namespace: aib-serving
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Egress
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-data
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: redis
+          ports:
+            - protocol: TCP
+              port: 6379
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-system
+          ports:
+            - protocol: TCP # mlrun-api / RAI proxy — VERIFY RAI proxy's actual listening port
+              port: 8080
+######################## invocation
+  - name: ingress
+    namespace: aib-serving
+    spec:
+      podSelector: {}
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-system
+              podSelector:
+                matchLabels:
+                  app: istio-ingressgateway # external traffic to serving functions
+          ports:
+            - protocol: TCP # VERIFY: actual Nuclio function invocation port(s)
+              port: 8080 

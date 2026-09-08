@@ -1,0 +1,244 @@
+# =============================================================================
+# MLRun — AWS overrides (layered on top of common values via -f common -f AWS)
+#
+# Overrides:
+#   - Image registry/repos: Artifact Registry → ECR
+#   - Nuclio function registry: GAR → ECR
+#   - S3 endpoints: SeaweedFS → native AWS S3
+#   - MLRUN_IMAGES_REGISTRY: Artifact Registry → ECR
+#   - Minio/SeaweedFS section: reconfigured for native AWS S3
+#
+# ── Domains to change per market ──────────────────────────────────────────────
+#   Base domain : dev.aibplus.vodacom.aws.corp        → <env>.aibplus.<market>.aws.corp
+#   Nuclio      : nuclio.dev.aibplus.vodacom.aws.corp → nuclio.<env>.aibplus.<market>.aws.corp
+#   MLRun       : mlrun.dev.aibplus.vodacom.aws.corp  → mlrun.<env>.aibplus.<market>.aws.corp
+#   S3 region   : s3.af-south-1.amazonaws.com         → s3.<aws-region>.amazonaws.com
+#   ECR registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com → <account>.dkr.ecr.<region>.amazonaws.com
+#   S3 bucket   : gsm-grp-shared-490083271972-af-south-1/eks/mlrun → <bucket-name>
+# =============================================================================
+
+global:
+  externalHostAddress: dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+  registry:
+    # Where mlrun sa will push nuclio function docker images 
+    url: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images"  # Change by AIB+ Market
+
+  infrastructure:
+    kind: aws
+    provider: aws
+    aws:
+      bucketName: gsm-grp-shared-490083271972-af-south-1/eks/mlrun  # Change by AIB+ Market
+      s3NonAnonymous: true
+
+# =============================================================================
+# Nuclio
+# =============================================================================
+nuclio:
+  externalHostAddress: nuclio.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+  registry:
+    dependantImageRegistryURL: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images"  # Change by AIB+ Market
+    
+
+  # All image repos below: Change by AIB+ Market (ECR account + region)
+  controller:
+    image:
+      repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/nuclio-controller
+
+  dashboard:
+    image:
+      repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/nuclio-dashboard
+    # Tag is deterministic (<project>-<function>-processor), so redeploys re-push
+    # the same tag. ECR repo must allow overwrite or reruns fail with
+    # ImageTagAlreadyExistsException:
+    #   aws ecr put-image-tag-mutability \
+    #     --repository-name aibplus-images/nuclio-functions-registry \
+    #     --image-tag-mutability IMMUTABLE_WITH_EXCLUSION \
+    #     --image-tag-mutability-exclusion-filters filterType=WILDCARD,filter=*-processor \
+    #     --region af-south-1
+    imageNamePrefixTemplate: "nuclio-functions-registry:{{ .ProjectName }}-{{ .FunctionName }}-"
+
+    kaniko:
+      # Cache layers are rewritten every build — this repo must be MUTABLE.
+      cacheRepo: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/aibplus-kaniko-cache  # Change by AIB+ Market (ECR account + region)
+
+      defaultServiceAccount: "mlrun-job-runner"
+      image:
+        repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/kaniko-executor
+
+      initContainerImage:
+        busybox:
+          repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/busybox
+
+        awscli:
+          repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/aws-cli
+
+    autoscaler:
+      image:
+        repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/nuclio-autoscaler
+    dlx:
+      image:
+        repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/nuclio-dlx
+
+# =============================================================================
+# MLRun Core
+# =============================================================================
+mlrun:
+  externalHostAddress: mlrun.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+  # Use native AWS S3 instead of SeaweedFS
+  storage: s3
+
+  nuclio:
+    uiURL: https://nuclio.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+
+  api:
+    image:
+      repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mlrun-api  # Change by AIB+ Market
+
+    sidecars:
+      logCollector:
+        image:
+          repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mlrun-log-collector  # Change by AIB+ Market
+
+    # envFrom is a list — full replacement required
+    # Removed minio-credentials (using Pod Identity instead of static keys)
+    envFrom:
+      - configMapRef:
+          name: mlrun-common-env
+      - configMapRef:
+          name: mlrun-pipelines-config
+          optional: true
+      - configMapRef:
+          name: mlrun-spark-config
+          optional: true
+      - configMapRef:
+          name: mlrun-override-env
+          optional: true
+      - secretRef:
+          name: mlrun-redis-credentials
+          optional: true
+
+    # All ECR image refs below: Change by AIB+ Market (ECR account + region)
+    extraEnvKeyValue:
+      MLRUN_IMAGES_REGISTRY: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images"
+      MLRUN_DEFAULT_BASE_IMAGE: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mlrun/mlrun:1.10.0"
+      MLRUN_KFP_IMAGE: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mlrun-kfp:1.10.0"
+      MLRUN_IMAGES_TAG: "1.10.0"
+      # af-south-1 is opt-in, so the global endpoint answers 400
+      # IllegalLocationConstraintException. Region alone is not enough:
+      # boto3 still presigns against bucket.s3.amazonaws.com.
+      # Pin all three so nothing inherits the SeaweedFS URL from common.
+      # S3_ENDPOINT_URL is deprecated in mlrun 1.10, kfp sync.py still reads it.
+      AWS_ENDPOINT_URL_S3: "https://s3.af-south-1.amazonaws.com"  # Change by AIB+ Market (region)
+      S3_ENDPOINT_URL: "https://s3.af-south-1.amazonaws.com"      # Change by AIB+ Market (region)
+      AWS_S3_ENDPOINT_URL: "https://s3.af-south-1.amazonaws.com"  # Change by AIB+ Market (region)
+      AWS_DEFAULT_REGION: "af-south-1"  # botocore reads this one, not AWS_REGION
+      AWS_REGION: "af-south-1"          # Change by AIB+ Market (region)
+      # AWS S3 uses virtual-hosted-style by default
+      S3_ADDRESSING_STYLE: "virtual"
+      S3_VERIFY_SSL: "true"
+      MLRUN_FUNCTION__SPEC__SERVICE_ACCOUNT__DEFAULT: "mlrun-job-runner"
+      # FQDN required because pipeline/function pods run in aibplus-profile, not aib-system
+      MLRUN_HTTPDB__API_URL: "http://mlrun-api.aib-system.svc.cluster.local:8080"
+      MLRUN_FUNCTION__SPEC__IMAGE_PULL_POLICY__DEFAULT: "IfNotPresent"
+      MLRUN_HTTPDB__BUILDER__KANIKO_AWS_CLI_IMAGE: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/aws-cli:2.17.16"
+      MLRUN_HTTPDB__NUCLIO__DEFAULT_SERVICE_TYPE: "ClusterIP"
+      # MLRUN_HUB__DEFAULT_SOURCE__CREATE: "false"
+      # MLRUN_HUB__DEFAULT_SOURCE__URL: ""
+
+    # KFP namespace patch — same fix as common but using ECR image
+    extraInitContainers:
+      - name: patch-kfp-namespace
+        image: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mlrun-api:1.10.0  # Change by AIB+ Market
+        command: ["python", "-c"]
+        args:
+          - |
+            import shutil
+            # --- Patch endpoints/pipelines.py ---
+            src = "/mlrun/server/py/services/api/api/endpoints/pipelines.py"
+            dst = "/patches/pipelines_endpoints.py"
+            with open(src) as f:
+                code = f.read()
+            code = code.replace(
+                'run_name: str = fastapi.Query("", alias="run"),\n    auth_info',
+                'run_name: str = fastapi.Query("", alias="run"),\n    namespace: typing.Optional[str] = fastapi.Query(None),\n    auth_info',
+            )
+            code = code.replace(
+                'run_name=run_name,\n        project=project,\n    )\n    return response',
+                'run_name=run_name,\n        project=project,\n        namespace=namespace,\n    )\n    return response',
+            )
+            code = code.replace(
+                'project: typing.Optional[str] = None,\n):\n    # Prefix the experiment',
+                'project: typing.Optional[str] = None,\n    namespace: typing.Optional[str] = None,\n):\n    # Prefix the experiment',
+            )
+            code = code.replace(
+                'data,\n        arguments,\n    )',
+                'data,\n        arguments,\n        namespace=namespace,\n    )',
+            )
+            with open(dst, "w") as f:
+                f.write(code)
+            # --- Patch crud/pipelines.py ---
+            src2 = "/mlrun/server/py/services/api/crud/pipelines.py"
+            dst2 = "/patches/pipelines_crud.py"
+            with open(src2) as f:
+                code2 = f.read()
+            code2 = code2.replace(
+                'arguments: typing.Optional[dict] = None,\n    ):\n        if arguments',
+                'arguments: typing.Optional[dict] = None,\n        namespace: typing.Optional[str] = None,\n    ):\n        namespace = namespace or "aibplus-profile"\n        if arguments',
+            )
+            code2 = code2.replace(
+                'kfp_client = self._initialize_kfp_client()\n            experiment = mlrun_pipelines.models.PipelineExperiment(\n                kfp_client.create_experiment(name=experiment_name)',
+                'kfp_client = self._initialize_kfp_client()\n            experiment = mlrun_pipelines.models.PipelineExperiment(\n                kfp_client.create_experiment(name=experiment_name, namespace=namespace)',
+            )
+            with open(dst2, "w") as f:
+                f.write(code2)
+            print("KFP namespace patches applied")
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+          - name: kfp-patches
+            mountPath: /patches
+
+  ui:
+    image:
+      repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mlrun-ui  # Change by AIB+ Market
+
+# =============================================================================
+# MPI Operator — ECR images (replaces GCP Artifact Registry)
+# =============================================================================
+mpi-operator:
+  # Change by AIB+ Market (ECR account + region)
+  image:
+    deployment:
+      repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mpi-operator
+    kubectlDelivery:
+      repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/mpi-kubectl-delivery
+
+# =============================================================================
+# S3-Compatible Object Store — Native AWS S3 (replaces SeaweedFS)
+# =============================================================================
+# Empty secrets — AWS uses Pod Identity, not static keys.
+# Required to prevent nil pointer in s3-auth-secret.yaml template.
+secrets:
+  s3:
+    accessKey: ""
+    secretKey: ""
+
+minio:
+  enabled: false
+  externalHost: "s3.af-south-1.amazonaws.com"  # Change by AIB+ Market (AWS region)
+  service:
+    port: 443
+
+    

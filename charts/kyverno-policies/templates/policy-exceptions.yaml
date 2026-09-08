@@ -1,0 +1,24 @@
+{{- range $name, $exception := .Values.policyExceptions }}
+{{- if $exception.enabled }}
+---
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kyverno-policies.labels" $ | nindent 4 }}
+spec:
+  exceptions:
+  {{- range $exception.exceptions }}
+    - policyName: {{ .policyName }}
+      ruleNames:
+        {{- toYaml .ruleNames | nindent 8 }}
+  {{- end }}
+  match:
+    any:
+    {{- range $exception.match }}
+      - resources:
+          {{- toYaml . | nindent 10 }}
+    {{- end }}
+{{- end }}
+{{- end }}

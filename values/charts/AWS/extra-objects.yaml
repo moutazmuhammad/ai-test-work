@@ -1,0 +1,292 @@
+# =============================================================================
+# Extra Objects — AWS overrides
+#
+# extraObjects is a list so the entire list must be repeated.
+# Only the mlrun-env PodDefault changes (SeaweedFS → native AWS S3).
+# =============================================================================
+
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: dex-aibplus-theme
+      namespace: aib-auth
+    data:
+      styles.css: |
+        :root {
+          --voda-red: #E60000;
+          --voda-dark: #333333;
+          --voda-grey: #f4f4f4;
+        }
+
+        body {
+          background-color: var(--voda-grey) !important;
+          font-family: "Vodafone LT", "Source Sans Pro", Helvetica, Arial, sans-serif !important;
+          color: var(--voda-dark);
+        }
+
+        .dex-container {
+          border-radius: 0px !important;
+          border: none !important;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.1) !important;
+          border-top: 6px solid var(--voda-red) !important;
+          padding: 10px !important;
+          max-width: 500px !important;
+          margin: 10px auto !important;
+        }
+
+        .dex-container form, .theme-form-row {
+          display: inline-block !important;
+          margin: 5px !important;
+        }
+
+        .dex-container > div:has(.theme-form-row),
+        .dex-container > div:has(form) {
+          margin-top: 0px !important;
+        }
+
+        .dex-btn, .theme-btn--success, .theme-btn-provider {
+          border-radius: 50px !important;
+          padding: 12px 30px !important;
+          font-weight: bold !important;
+          text-transform: none !important;
+          border: none !important;
+          min-width: 100px !important;
+          cursor: pointer;
+        }
+        .dex-btn-primary, .theme-btn--success {
+          background-color: var(--voda-red) !important;
+          color: white !important;
+        }
+        .theme-btn-provider {
+          background-color: #4A4D4E !important;
+          color: white !important;
+        }
+
+        .theme-heading {
+          font-weight: 300 !important;
+          margin-top: 5px !important;
+          margin-bottom: 5px !important;
+        }
+        .dex-subtle-text {
+          font-size: 1.2rem !important;
+          color: var(--voda-dark) !important;
+          margin-bottom: 1px !important;
+          font-weight: 400 !important;
+        }
+        .dex-list {
+          list-style: none !important;
+          padding-left: 0 !important;
+          margin-bottom: 1px !important;
+        }
+        .dex-list li {
+          font-size: 1.1rem !important;
+          color: #4A4D4E !important;
+          line-height: 1.8 !important;
+          margin-bottom: 1px !important;
+          display: flex;
+          align-items: center;
+        }
+        .dex-list li::before {
+          content: "•";
+          color: var(--voda-red);
+          font-weight: bold;
+          font-size: 1.5rem;
+          margin-right: 15px;
+        }
+        .dex-separator {
+          margin: 10px 0 !important;
+          opacity: 0.2;
+        }
+
+        .theme-navbar__logo-wrap {
+          display: flex !important;
+          justify-content: center !important;
+          margin-bottom: 20px !important;
+        }
+
+        .theme-navbar__logo {
+          width: 20% !important;
+          height: auto !important;
+          display: block !important;
+        }
+
+# Logo
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: dex-aibplus-aib-logo
+      namespace: aib-auth
+    binaryData:
+      logo.png: '{{ $.Files.Get "files/aib-logo.png" | b64enc }}'
+
+###########
+# Kubeflow
+###########
+
+# Headers
+  - apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      name: inject-kubeflow-headers
+      namespace: aib-auth
+    spec:
+      workloadSelector:
+        labels:
+          app: oauth2-proxy
+      configPatches:
+        - applyTo: HTTP_FILTER
+          match:
+            context: SIDECAR_INBOUND
+            listener:
+              filterChain:
+                filter:
+                  name: "envoy.filters.network.http_connection_manager"
+                  subFilter:
+                    name: "envoy.filters.http.router"
+          patch:
+            operation: INSERT_BEFORE
+            value:
+              name: envoy.lua
+              typed_config:
+                "@type": "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua"
+                inlineCode: |
+                  function envoy_on_response(response_handle)
+                    local headers = response_handle:headers()
+
+                    -- 1. Inject UserID from the proxy's response email
+                    local email = headers:get("x-auth-request-email")
+                    if email and not headers:get("kubeflow-userid") then
+                      headers:add("kubeflow-userid", email)
+                    end
+
+                    -- 2. Inject Groups and clean them
+                    local groups = headers:get("x-auth-request-groups")
+                    if groups and not headers:get("kubeflow-groups") then
+                      -- Cleans JSON array chars if present (e.g. ["admin"] -> admin)
+                      local clean_groups = groups:gsub("[%[%]%\"]", "")
+                      headers:add("kubeflow-groups", clean_groups)
+                    end
+
+                    -- 3. Evaluate Membership and Inject x-is-project-owner
+                    if groups then
+                      if string.find(groups, "{{ .Values.groups.admin | replace "-" "%-" }}") or string.find(groups, "{{ .Values.groups.projectOwner | replace "-" "%-" }}") then
+                        headers:add("x-is-project-owner", "true")
+                      else
+                        headers:add("x-is-project-owner", "false")
+                      end
+                    else
+                      headers:add("x-is-project-owner", "false")
+                    end
+                  end
+
+# Static (single) Profile
+  - apiVersion: kubeflow.org/v1
+    kind: Profile
+    metadata:
+      name: aibplus-profile
+      annotations:
+        argocd.argoproj.io/sync-wave: "0"
+    spec:
+      owner:
+        kind: User
+        name: "{{ .Values.profileOwner }}"
+
+# PodDefault: inject MLRun env vars into notebook pods
+# CHANGED FOR AWS: SeaweedFS S3 endpoints replaced with native AWS S3
+  - apiVersion: kubeflow.org/v1alpha1
+    kind: PodDefault
+    metadata:
+      name: mlrun-env
+      namespace: aibplus-profile
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    spec:
+      desc: "MLRun environment variables for connecting to MLRun API and S3 storage"
+      selector:
+        matchLabels:
+          mlrun-env: "true"
+      # S3 credentials provided via Pod Identity (no static keys needed)
+      env:
+        - name: MLRUN_NAMESPACE
+          value: "aib-system"
+        - name: MLRUN_DBPATH
+          value: "http://mlrun-api.aib-system.svc.cluster.local:8080"
+        - name: MLRUN_UI_URL
+          value: "https://mlrun.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+        - name: MLRUN_NUCLIO_DASHBOARD_URL
+          value: "http://nuclio-dashboard.aib-system.svc.cluster.local:8070"
+        - name: MLRUN_IMAGES_REGISTRY
+          value: "490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/"
+        - name: S3_VERIFY_SSL
+          value: "true"
+        # af-south-1 is opt-in, so the global endpoint answers 400
+        # IllegalLocationConstraintException. Region alone is not enough:
+        # boto3 still presigns against bucket.s3.amazonaws.com.
+        - name: AWS_DEFAULT_REGION
+          value: "af-south-1"  # botocore reads this one, not AWS_REGION
+        - name: AWS_REGION
+          value: "af-south-1"  # Change by AIB+ Market (region)
+        - name: AWS_ENDPOINT_URL_S3
+          value: "https://s3.af-south-1.amazonaws.com"  # Change by AIB+ Market (region)
+        - name: S3_ADDRESSING_STYLE
+          value: "virtual"
+
+# KFP profile resources — manually defined because:
+# 1. The profile controller (sync.py) hardcodes SeaweedFS endpoints and static
+#    key auth, which are wrong for AWS (we need native S3 with useSDKCreds).
+# 2. Even if patched, the controller's sync() calls iam.create_access_key()
+#    against SeaweedFS IAM — if that fails, none of the ConfigMaps are created.
+# Uses IRSA/Pod Identity (useSDKCreds) instead of static keys.
+# Change MLRUN bucket name by AIB+ client.
+  - apiVersion: v1   # Change by AIB+ Market
+    kind: ConfigMap
+    metadata:
+      name: artifact-repositories
+      namespace: aibplus-profile
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+        workflows.argoproj.io/default-artifact-repository: default-namespaced
+    data:
+      # Argo placeholders are escaped with backticks, not quotes. The chart runs
+      # each object through tpl(toYaml .), and this string is long enough that
+      # toYaml emits it double-quoted and folded, turning "..." into \"...\"
+      # which tpl then refuses to parse. Backticks are never escaped.
+      default-namespaced: |
+        {"archiveLogs":true,"s3":{"bucket":"gsm-grp-shared-490083271972-af-south-1", "endpoint": "s3.af-south-1.amazonaws.com", "region":"af-south-1","keyFormat":"eks/mlrun/private-artifacts/aibplus-profile/{{`{{workflow.name}}` }}/{{ `{{workflow.creationTimestamp.Y}}` }}/{{ `{{workflow.creationTimestamp.m}}` }}/{{`{{workflow.creationTimestamp.d}}` }}/{{ `{{pod.name}}` }}","useSDKCreds":true}}
+
+  - apiVersion: v1   # Change by AIB+ Market
+    kind: ConfigMap
+    metadata:
+      name: kfp-launcher
+      namespace: aibplus-profile
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    data:
+      defaultPipelineRoot: "s3://gsm-grp-shared-490083271972-af-south-1/eks/mlrun/private-artifacts/aibplus-profile/v2/artifacts"
+      clusterDomain: ".svc.cluster.local"
+
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: metadata-grpc-configmap
+      namespace: aibplus-profile
+      annotations:
+        argocd.argoproj.io/sync-wave: "1"
+    data:
+      METADATA_GRPC_SERVICE_HOST: "metadata-grpc-service"
+      METADATA_GRPC_SERVICE_PORT: "8080"
+
+# disable mtls on traffic from mlmd-envoy to mlmd-grpc
+  - apiVersion: security.istio.io/v1beta1
+    kind: PeerAuthentication
+    metadata:
+      name: metadata-grpc-disable-mtls
+      namespace: aib-system
+    spec:
+      selector:
+        matchLabels:
+          component: metadata-grpc-server
+      portLevelMtls:
+        8080:
+          mode: DISABLE

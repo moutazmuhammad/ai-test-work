@@ -1,0 +1,22 @@
+image:
+  repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/aib-plus-rai
+  tag: v1.3
+
+name: rai
+namespace: aib-system
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  protocol: TCP
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: 1
+    memory: 3Gi

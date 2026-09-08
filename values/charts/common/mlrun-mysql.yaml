@@ -1,0 +1,308 @@
+# Keep the service name as "mlrun-db" so existing DSN and grafana datasource
+# references (mlrun-db:3306) continue to work unchanged.
+fullnameOverride: mlrun-db
+
+networkPolicy:
+  enabled: false
+
+architecture: replication
+
+global:
+  security:
+    allowInsecureImages: true
+
+# Images — pinned to the mirror; Bitnami moved non-hardened tags to `bitnamilegacy/*`.
+# Source of defaults: charts/mysql/values.yaml (Chart.yaml annotations).
+
+image:
+  registry: europe-west1-docker.pkg.dev
+  repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-mysql
+  tag: 9.4.0-debian-12-r1-review-5
+  pullPolicy: IfNotPresent
+
+volumePermissions:
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-os-shell
+    tag: 257a004fe2c0-fixed
+    pullPolicy: IfNotPresent
+
+# Metrics — mysqld-exporter sidecar on all 3 pods, scraped by the aib-ops Prometheus via mlrun-db-metrics.
+# 9104 is excluded from the Istio sidecar (annotation below) and opened in network-policies.yaml; 3306 untouched.
+
+metrics:
+  enabled: true
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-mysqld-exporter
+    tag: 0.17.2-debian-12-r16
+    pullPolicy: IfNotPresent
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+      ephemeral-storage: 256Mi
+
+  # Defaults cover global_status/variables and slave_status; innodb_metrics adds InnoDB detail.
+  # Only `primary` is set — chart 14.0.3 feeds it to the secondaries too, so `secondary` is dead.
+  extraArgs:
+    primary:
+      - --collect.info_schema.innodb_metrics
+
+  serviceMonitor:
+    enabled: true
+    namespace: aib-data
+    interval: 30s
+
+auth:
+  existingSecret: mysql-credentials
+  createDatabase: false
+
+tls:
+  enabled: false
+
+initdbScripts:
+  01-create-mlrun-databases.sh: |
+    #!/bin/bash
+    # Bitnami sources (not executes) this file because the configmap mount
+    # isn't executable, so it inherits the parent shell's `set -u`. Keep it
+    # defensive: no parameter-expansion defaults, no undefined variable
+    # references.
+    #
+    # The chart mounts this same configmap on both primary and secondary.
+    # On the secondary, root doesn't exist locally yet (it arrives via
+    # replication), so skip this script anywhere that isn't the master.
+    set +u
+    if [ "${MYSQL_REPLICATION_MODE:-}" != "master" ]; then
+        echo "Skipping mlrun database bootstrap on non-master (MYSQL_REPLICATION_MODE=${MYSQL_REPLICATION_MODE:-unset})"
+        return 0 2>/dev/null || exit 0
+    fi
+    MLRUN_DB_PW=""
+    if [ -f /opt/bitnami/mysql/secrets/mysql-root-password ]; then
+        MLRUN_DB_PW=$(cat /opt/bitnami/mysql/secrets/mysql-root-password)
+    fi
+    /opt/bitnami/mysql/bin/mysql -uroot -p"$MLRUN_DB_PW" -e "CREATE DATABASE IF NOT EXISTS mlrun; CREATE DATABASE IF NOT EXISTS mlrun_model_monitoring;"
+
+  02-create-seaweedfs-user.sh: |
+    #!/bin/bash
+    # Provision the SeaweedFS filer's database + user on this MySQL instance.
+    # Runs once on first bootstrap of the primary. The password comes from the
+    # `seaweedfs-db-credentials` Secret (key: mariadb-password), mounted at
+    # /seaweedfs-init by `primary.extraVolumes` below. The same Secret is
+    # referenced by the SeaweedFS chart's externalDatabase.existingSecret, so
+    # the two sides share the single source of truth for the password.
+    set +u
+    if [ "${MYSQL_REPLICATION_MODE:-}" != "master" ]; then
+        echo "Skipping seaweedfs bootstrap on non-master"
+        return 0 2>/dev/null || exit 0
+    fi
+    if [ ! -f /seaweedfs-init/mariadb-password ]; then
+        echo "seaweedfs-db-credentials secret not mounted — skipping seaweedfs user creation"
+        return 0 2>/dev/null || exit 0
+    fi
+    ROOT_PW=""
+    if [ -f /opt/bitnami/mysql/secrets/mysql-root-password ]; then
+        ROOT_PW=$(cat /opt/bitnami/mysql/secrets/mysql-root-password)
+    fi
+    SW_PW=$(cat /seaweedfs-init/mariadb-password)
+    # Includes the `filemeta` table that the SeaweedFS filer expects to find.
+    # The filer (chart 4.21) does NOT auto-create this schema — it errors out
+    # with "Table 'seaweedfs.filemeta' doesn't exist" if missing. Schema
+    # matches the upstream MySQL store definition.
+    /opt/bitnami/mysql/bin/mysql -uroot -p"$ROOT_PW" <<EOF
+    CREATE DATABASE IF NOT EXISTS seaweedfs DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;
+    CREATE USER IF NOT EXISTS 'seaweedfs'@'%' IDENTIFIED BY '${SW_PW}';
+    ALTER USER 'seaweedfs'@'%' IDENTIFIED BY '${SW_PW}';
+    GRANT ALL PRIVILEGES ON seaweedfs.* TO 'seaweedfs'@'%';
+    FLUSH PRIVILEGES;
+    USE seaweedfs;
+    CREATE TABLE IF NOT EXISTS filemeta (
+      \`dirhash\`   BIGINT       NOT NULL COMMENT 'first 64 bits of MD5 hash value of directory field',
+      \`name\`      VARCHAR(766) NOT NULL COMMENT 'directory or file name',
+      \`directory\` TEXT         NOT NULL COMMENT 'full path to parent directory',
+      \`meta\`      LONGBLOB,
+      PRIMARY KEY (\`dirhash\`, \`name\`)
+    ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+    EOF
+    
+  03-create-kubeflow-databases.sh: |
+    #!/bin/bash
+    # Provision the Kubeflow databases on this MySQL instance.
+    # Runs once on first bootstrap of the primary.
+    #
+    # Uses the existing MySQL root password from the mounted
+    # `mysql-credentials` Secret managed by the Bitnami chart.
+    set +u
+
+    if [ "${MYSQL_REPLICATION_MODE:-}" != "master" ]; then
+        echo "Skipping kubeflow bootstrap on non-master"
+        return 0 2>/dev/null || exit 0
+    fi
+
+    ROOT_PW=""
+    if [ -f /opt/bitnami/mysql/secrets/mysql-root-password ]; then
+        ROOT_PW=$(cat /opt/bitnami/mysql/secrets/mysql-root-password)
+    fi
+
+    /opt/bitnami/mysql/bin/mysql -uroot -p"$ROOT_PW" <<EOF
+    CREATE DATABASE IF NOT EXISTS metadb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS cachedb DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS mlpipeline DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+    CREATE USER IF NOT EXISTS 'kubeflow'@'%' IDENTIFIED BY '${KUBEFLOW_DB_PASSWORD}';
+    ALTER USER 'kubeflow'@'%' IDENTIFIED BY '${KUBEFLOW_DB_PASSWORD}';
+
+    GRANT ALL PRIVILEGES ON metadb.* TO 'kubeflow'@'%';
+    GRANT ALL PRIVILEGES ON cachedb.* TO 'kubeflow'@'%';
+    GRANT ALL PRIVILEGES ON mlpipeline.* TO 'kubeflow'@'%';
+
+    FLUSH PRIVILEGES;
+
+    EOF
+
+primary:
+  # Bitnami's "replication" architecture is single-writer — only one primary
+  # is permitted; secondaries provide read HA via async replication.
+  replicaCount: 1
+
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  extraEnvVarsSecret: mysql-credentials
+
+  podAnnotations:
+    proxy.istio.io/config: |
+      holdApplicationUntilProxyStarts: true
+    # Keep 9104 out of the sidecar's inbound redirect so the sidecar-less
+    # aib-ops Prometheus can scrape the exporter directly. 3306 is untouched.
+    traffic.sidecar.istio.io/excludeInboundPorts: "9104"
+
+  extraVolumes:
+    - name: seaweedfs-db-credentials
+      secret:
+        secretName: seaweedfs-db-credentials
+        optional: true
+
+  extraVolumeMounts:
+    - name: seaweedfs-db-credentials
+      mountPath: /seaweedfs-init
+      readOnly: true
+
+  pdb:
+    create: false
+
+  persistence:
+    enabled: true
+    storageClass: aib-block-performance
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+
+  service:
+    type: ClusterIP
+    ports:
+      mysql: 3306
+
+  podAntiAffinityPreset: hard
+
+secondary:
+  # Two replicas behind the read service, each with its own PVC: losing one
+  # still leaves the cluster writable (primary) and readable (one secondary).
+  replicaCount: 2
+  podManagementPolicy: Parallel
+
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  podAnnotations:
+    proxy.istio.io/config: |
+      holdApplicationUntilProxyStarts: true
+    # Keep 9104 out of the sidecar's inbound redirect so the sidecar-less
+    # aib-ops Prometheus can scrape the exporter directly. 3306 is untouched.
+    traffic.sidecar.istio.io/excludeInboundPorts: "9104"
+
+  pdb:
+    create: true
+    minAvailable: 1
+
+  persistence:
+    enabled: true
+    storageClass: aib-block-performance
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+
+  startupProbe:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+    successThreshold: 1
+
+  # Spread secondaries across nodes.
+  podAntiAffinityPreset: hard

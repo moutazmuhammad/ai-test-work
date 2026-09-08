@@ -1,0 +1,5 @@
+apiVersion: v2
+name: foundation
+description: Creates all platform namespaces before any services are deployed
+version: 1.0.0
+appVersion: "1.0.0"

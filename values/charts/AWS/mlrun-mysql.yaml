@@ -1,0 +1,38 @@
+# =============================================================================
+# MLRun MySQL — AWS overrides (layered on top of common values via -f common -f AWS)
+#
+# Overrides:
+#   - Image registry/repos: Artifact Registry → ECR
+#   - Remove SeaweedFS init script (using S3 instead)
+#   - Remove SeaweedFS extra volumes/mounts from primary
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Images
+# -----------------------------------------------------------------------------
+image:
+  registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+  repository: aibplus-images/bitnami-mysql
+
+volumePermissions:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-os-shell
+
+metrics:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-mysqld-exporter
+
+# -----------------------------------------------------------------------------
+# Remove SeaweedFS init script (S3 replaces SeaweedFS on AWS)
+# -----------------------------------------------------------------------------
+initdbScripts:
+  02-create-seaweedfs-user.sh: ""
+
+# -----------------------------------------------------------------------------
+# Primary — remove SeaweedFS volume mounts
+# -----------------------------------------------------------------------------
+primary:
+  extraVolumes: []
+  extraVolumeMounts: []

@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openldap-seed-data
+  namespace: identity
+data:
+  users-groups.ldif: |
+    # Organization Units
+    dn: ou=users,dc=vodafone,dc=com
+    objectClass: organizationalUnit
+    ou: users
+
+    dn: ou=groups,dc=vodafone,dc=com
+    objectClass: organizationalUnit
+    ou: groups
+
+    # Groups (Note the memberUid lines linking to the users)
+    dn: cn=AIBPlus-Platform-Admins-GRP,ou=groups,dc=vodafone,dc=com
+    objectClass: posixGroup
+    cn: AIBPlus-Platform-Admins-GRP
+    gidNumber: 5001
+    memberUid: mostafa
+    memberUid: anthony
+    memberUid: simon
+
+    dn: cn=AIBPlus-Project-Creators-GRP,ou=groups,dc=vodafone,dc=com
+    objectClass: posixGroup
+    cn: AIBPlus-Project-Creators-GRP
+    gidNumber: 5002
+    memberUid: sunil
+    memberUid: perihane
+    memberUid: mostafa
+
+    dn: cn=AIBPlus-Data-Scientists-GRP,ou=groups,dc=vodafone,dc=com
+    objectClass: posixGroup
+    cn: AIBPlus-Data-Scientists-GRP
+    gidNumber: 5003
+    memberUid: kaashif
+    memberUid: moutaz
+    memberUid: abdulkadir
+
+    dn: cn=AIBPlus-Platform-Users-GRP,ou=groups,dc=vodafone,dc=com
+    objectClass: posixGroup
+    cn: AIBPlus-Platform-Users-GRP
+    gidNumber: 5004
+    memberUid: geetanjali
+
+    # Users
+    dn: cn=mostafa,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: mostafa
+    sn: vodafone
+    uid: mostafa
+    mail: mostafa@vodafone.com
+    uidNumber: 1001
+    gidNumber: 5001
+    homeDirectory: /home/mostafa
+    userPassword: 123mostafa1001
+
+    dn: cn=anthony,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: anthony
+    sn: vodafone
+    uid: anthony
+    mail: anthony@vodafone.com
+    uidNumber: 1002
+    gidNumber: 5001
+    homeDirectory: /home/anthony
+    userPassword: 123anthony1001
+
+    dn: cn=simon,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: simon
+    sn: vodafone
+    uid: simon
+    mail: simon@vodafone.com
+    uidNumber: 1003
+    gidNumber: 5001
+    homeDirectory: /home/simon
+    userPassword: 123simon1001
+
+    dn: cn=sunil,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: sunil
+    sn: vodafone
+    uid: sunil
+    mail: sunil@vodafone.com
+    uidNumber: 1004
+    gidNumber: 5002
+    homeDirectory: /home/sunil
+    userPassword: 123sunil1002
+
+    dn: cn=perihane,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: perihane
+    sn: vodafone
+    uid: perihane
+    mail: perihane@vodafone.com
+    uidNumber: 1005
+    gidNumber: 5002
+    homeDirectory: /home/perihane
+    userPassword: 123perihane1002
+
+    dn: cn=kaashif,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: kaashif
+    sn: vodafone
+    uid: kaashif
+    mail: kaashif@vodafone.com
+    uidNumber: 1006
+    gidNumber: 5003
+    homeDirectory: /home/kaashif
+    userPassword: 123kaashif1003
+
+    dn: cn=moutaz,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: moutaz
+    sn: vodafone
+    uid: moutaz
+    mail: moutaz@vodafone.com
+    uidNumber: 1007
+    gidNumber: 5003
+    homeDirectory: /home/moutaz
+    userPassword: 123moutaz1003
+
+    dn: cn=geetanjali,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: geetanjali
+    sn: vodafone
+    uid: geetanjali
+    mail: geetanjali@vodafone.com
+    uidNumber: 1008
+    gidNumber: 5004
+    homeDirectory: /home/geetanjali
+    userPassword: 123geetanjali1004
+
+    dn: cn=abdulkadir,ou=users,dc=vodafone,dc=com
+    objectClass: inetOrgPerson
+    objectClass: posixAccount
+    cn: abdulkadir
+    sn: vodafone
+    uid: abdulkadir
+    mail: abdulkadir@vodafone.com
+    uidNumber: 1009
+    gidNumber: 5003
+    homeDirectory: /home/abdulkadir
+    userPassword: 123abdulkadir1009

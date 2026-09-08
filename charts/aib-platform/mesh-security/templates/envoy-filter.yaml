@@ -1,0 +1,18 @@
+{{- range .Values.meshSecurity.envoyFilters }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    {{- include "mesh-security.labels" $ | nindent 4 }}
+spec:
+  {{- if .selector }}
+  workloadSelector:
+    labels:
+      {{- toYaml .selector | nindent 6 }}
+  {{- end }}
+  configPatches:
+    {{- toYaml .configPatches | nindent 4 }}
+{{- end }}

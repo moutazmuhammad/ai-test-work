@@ -1,0 +1,31 @@
+### 0- untar the gomplate file and copy bin/gomplate to dex repo root path
+tar -xzf gomplate.tar.gz
+
+#### 1- upgrade Golang
+
+git clone https://github.com/udhos/update-golang
+cd update-golang
+sudo ./update-golang.sh
+
+source /etc/profile.d/golang_path.sh
+
+#### 2- compile a clean version of gomplate
+
+git clone https://github.com/hairyhenderson/gomplate
+cd gomplate
+go get -u github.com/googleapis/enterprise-certificate-proxy@v0.3.19
+GOPROXY=direct go mod tidy
+GOPROXY=direct make build -B
+
+#### 3- build a clean version of dex image
+
+git clone https://github.com/dexidp/dex/
+cd dex
+go get golang.org/x/mod@v0.40.0
+go get go.etcd.io/etcd/client/pkg/v3@v3.6.14
+go mod tidy
+
+###### you must copy all files in this current directory to the cloned repo
+### [Dockerfile, gomplate, Makefile]
+
+docker build -t europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/dex:v2.45.1-alpine-3.24.1-fix .

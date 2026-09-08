@@ -1,0 +1,90 @@
+## Dev environment - Foundation namespace overrides
+
+namespaces:
+  # Istio base + istiod
+  - name: istio-system
+    labels:
+      istio-injection: enabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: infrastructure
+
+  # Istio CRs (Gateways, VirtualServices, etc.)
+  - name: aib-auth
+    labels:
+      istio-injection: enabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: authentication
+
+  - name: aib-system
+    labels:
+      istio-injection: enabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: ml-platform
+  
+  - name: aib-data
+    labels:
+      istio-injection: enabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: data-services
+  
+  - name: spark-operator
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: operator-controller 
+
+  - name: kyverno
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: infrastructure
+  
+  - name: external-secrets
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: infrastructure
+  
+  - name: cert-manager
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: infrastructure
+  
+  # - name: aib-serving
+  #   labels:
+  #     istio-injection: enabled
+  #     app.kubernetes.io/part-of: aib-platform
+  #     app.kubernetes.io/tier: serving
+  
+  - name: aib-serving
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: operations
+  
+  - name: aib-governance
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: governance
+  
+  - name: argocd-agent
+    labels:
+      istio-injection: disabled
+      app.kubernetes.io/part-of: aib-platform
+      app.kubernetes.io/tier: gitops
+
+  # - name: kubeflow
+  #   labels:
+  #     control-plane: kubeflow
+  #     istio-injection: enabled
+  #     app.kubernetes.io/part-of: aib-platform
+  #     app.kubernetes.io/tier: ml-platform
+
+  # - name: kubeflow-system
+  #   labels:
+  #     control-plane: kubeflow
+  #     istio-injection: enabled
+  #     app.kubernetes.io/part-of: aib-platform
+  #     app.kubernetes.io/tier: ml-platform

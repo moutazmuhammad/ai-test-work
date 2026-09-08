@@ -1,0 +1,87 @@
+{{- if .Values.aws.setupIAM.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "central-secret-operator.fullname" . }}-aws-iam-setup
+  annotations:
+    "helm.sh/hook": post-install
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    spec:
+      {{- with .Values.aws.setupIAM.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: aws-cli
+          {{- with .Values.aws.setupIAM.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ .Values.aws.setupIAM.image.repository | default "amazon/aws-cli" }}:{{ .Values.aws.setupIAM.image.tag | default "2.17.16" }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              # 1. Create IAM Policy for Secrets Manager
+              POLICY_ARN=$(aws iam create-policy \
+                --policy-name "${policy_name}" \
+                --policy-document '{
+                  "Version": "2012-10-17",
+                  "Statement": [{
+                    "Effect": "Allow",
+                    "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                    "Resource": "*"
+                  }]
+                }' --query 'Policy.Arn' --output text 2>/dev/null || aws iam list-policies --query "Policies[?PolicyName=='${policy_name}'].Arn" --output text)
+
+              # 2. Create the Trust Relationship JSON
+              # This allows your specific KSA to "assume" this IAM Role
+              cat <<EOF > /tmp/trust-policy.json
+              {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": { "Federated": "arn:aws:iam::${aws_account_id}:oidc-provider/${oidc_provider}" },
+                    "Action": "sts:AssumeRoleWithWebIdentity",
+                    "Condition": {
+                      "StringEquals": {
+                        "${oidc_provider}:sub": "system:serviceaccount:${namespace}:${ksa_name}"
+                      }
+                    }
+                  }
+                ]
+              }
+              EOF
+
+              # 3. Create IAM Role and Attach Policy
+              aws iam create-role --role-name "${role_name}" --assume-role-policy-document file:///tmp/trust-policy.json || echo "Role exists"
+              aws iam attach-role-policy --role-name "${role_name}" --policy-arn "${POLICY_ARN}"
+          {{- with .Values.aws.setupIAM.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: aws_account_id
+              value: {{ .Values.aws.setupIAM.accountId | quote }}
+            - name: oidc_provider
+              value: {{ .Values.aws.setupIAM.oidcProvider | quote }} 
+            - name: role_name
+              value: {{ .Values.aws.setupIAM.roleName | quote }}
+            - name: policy_name
+              value: {{ .Values.aws.setupIAM.policyName | default "ESOSecretsPolicy" | quote }}
+            - name: namespace
+              value: {{ .Values.serviceAccount.namespace | quote }}
+            - name: kubernetes_sa_name
+              value: {{ .Values.serviceAccount.name }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      restartPolicy: OnFailure
+
+{{- end }}

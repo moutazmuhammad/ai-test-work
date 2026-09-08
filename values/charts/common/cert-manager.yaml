@@ -1,0 +1,51 @@
+crds:
+  enabled: true
+
+prometheus:
+  enabled: true
+
+
+# Images — cert-manager GAR overrides.
+# Source of defaults: charts/cert-manager/values.yaml (Chart.yaml annotations).
+
+image:
+  registry: europe-west1-docker.pkg.dev
+  repository: vf-grp-aib-dev-mirror/aib-plus-images/cert-manager-controller
+  tag: v1.20.2
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "500m"
+    memory: "128Mi"
+
+cainjector:
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/cert-manager-cainjector
+    tag: v1.20.2
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: "50m"     # Baseline to continuously monitor Mutating/Validating Webhook CRDs
+      memory: "128Mi" # Needs more memory than the webhook to cache heavy cluster CRD states
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+webhook:
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/cert-manager-webhook
+    tag: v1.20.2
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: "50m" 
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"

@@ -1,0 +1,540 @@
+global:
+  registry:
+    url: "europe-west1-docker.pkg.dev/vf-grp-aibplus-dev-mlproduct/nuclio-functions-registry" # will be created by the client
+    secretName: "nuclio-push"
+  
+  infrastructure:
+    kind: standalone                   # cloud-agnostic, no provider assumptions
+    provider: ~                        # Set to null since we target any provider.
+    inboundCidrs: ~                    # Set to null since we target any provider
+    loadBalancerName: ~                # Not used with ClusterIP services
+    aws:                   
+      bucketName: mlrun                # Even with non-AWS setups, this value is used because MinIO is S3-compatible.
+      s3NonAnonymous: true             # Use this only with real AWS S3 and IAM-based authentication.
+      domainNameCertificate: ~         # Only used when infrastructure.kind is "aws". Not relevant here.
+
+
+# Nuclio - Serverless Functions
+
+nuclio:
+  externalHostAddress: nuclio.dev.plus.aib.vodafone.com
+  fullnameOverride: nuclio
+  registry:
+    dependantImageRegistryURL: "europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images"
+
+  platform:
+    kube:
+      defaultServiceType: ClusterIP
+      
+  controller:
+    namespace: ""
+    enabled: true
+    # Leader-elected, so a second replica would idle as a hot standby adding no
+    # throughput; the restart surface is small enough that 1 preserves availability.
+    replicas: 1
+
+    image:
+      repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/nuclio-controller
+      tag: 1.15.9-amd64
+      pullPolicy: IfNotPresent
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+
+    containerSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+        ephemeral-storage: 100Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+        ephemeral-storage: 500Mi
+
+  dashboard:
+    enabled: true
+    replicas: 1
+    service:
+      type: ClusterIP
+    containerBuilderKind: kaniko
+
+    image:
+      repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/nuclio-dashboard
+      tag: 1.15.9-amd64
+      pullPolicy: IfNotPresent
+    imageNamePrefixTemplate: "functions:{{ .ProjectName }}-{{ .FunctionName }}-" 
+
+    kaniko:
+      image:
+        repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/kaniko-executor
+        tag: v1.23.2
+      cacheRepo: europe-west1-docker.pkg.dev/vf-grp-aibplus-dev-mlproduct/nuclio-functions-registry
+      
+
+      initContainerImage:
+        busybox:
+          repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/busybox
+          tag: stable
+
+        awscli:
+          repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/aws-cli
+          tag: 2.17.16
+
+    ingress:
+      enabled: false
+
+    # Run dashboard as non-root
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+
+    containerSecurityContext:
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+        ephemeral-storage: 100Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+        ephemeral-storage: 500Mi
+
+    # Spread the two dashboard replicas across nodes — single-node failure
+    # then drops at most one replica.
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                nuclio.io/app: dashboard
+            topologyKey: kubernetes.io/hostname
+
+    rbac:
+      create: true
+      crdAccessMode: cluster
+    
+    # Install Nuclio CRDs (NuclioFunction, NuclioProject, NuclioFunctionEvent)
+    crd:                               
+      create: true
+
+    # # Target namespace where Nuclio deploys serverless function pods.
+    # functionNamespace: aib-serving 
+
+    platform:
+      projectsLeader:                  # Who is the source of truth for project definitions.
+        kind: mlrun                    # "mlrun" (MLRun manages projects, Nuclio follows),
+        synchronizationInterval: 10m   # How often Nuclio syncs project state from MLRun.
+        apiAddress: http://mlrun-api-chief:8080/api
+
+    autoscaler:
+      image:
+        repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/nuclio-autoscaler
+        tag: 1.15.9-amd64
+    dlx:
+      image:
+        repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/nuclio-dlx
+        tag: 1.15.9-amd64
+# MLRun Core
+mlrun:
+  externalHostAddress: mlrun.dev.plus.aib.vodafone.com
+  fullnameOverride: mlrun
+  enabled: true
+
+  # Default resource limits/requests applied to MLRun-submitted function pods (training jobs, serving functions, etc.)
+  defaultFunctionPodResources:
+    limits:
+      cpu: "2"
+      memory: "16Gi"
+      ephemeral-storage: "1Gi"
+    requests:
+      cpu: "25m"
+      memory: "1Mi"
+      ephemeral-storage: "256Mi"
+
+  # Options: "filesystem" (uses S3/SeaweedFS via S3 protocol), "s3" (direct AWS S3)
+  # Stay on filesystem — only this mode honours S3_ENDPOINT_URL, which is
+  # required to reach SeaweedFS instead of native AWS S3.
+  storage: filesystem
+  storageAutoMountParams: ~
+
+  # S3 creds come from the `minio-credentials` Secret (api.envFrom); the legacy secrets.s3.*
+  # knobs only apply to `storage: s3`. Must match anvAdmin in seaweedfs-s3-config (aib-data).
+
+  # MLRun's Nuclio integration mode.
+  nuclio:
+    mode: enabled
+    uiURL: https://nuclio.dev.plus.aib.vodafone.com
+    apiURL: http://nuclio-dashboard.aib-system.svc.cluster.local:8070
+
+  rbac:
+    create: true
+
+  api:
+    ingress:
+      enabled: false
+    fullnameOverride: mlrun-api
+    service:
+      type: ClusterIP
+
+    # Leader (writes state). Keep at 1; MLRun's HTTPDB is single-writer.
+    chief:
+      minReplicas: 1
+
+    # Workers serve read APIs and run async jobs — safe to scale horizontally.
+    # Keeps two warm pods so a single pod restart does not break /api reads.
+    worker:
+      minReplicas: 2
+      maxReplicas: 4
+
+    image:
+      repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mlrun-api
+      tag: 1.10.0
+      pullPolicy: IfNotPresent
+
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 1000
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+
+    # Sidecar that streams function pod logs to the API.
+    sidecars:
+      logCollector:
+        enabled: true
+        image:
+          repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mlrun-log-collector
+          tag: 1.10.0
+          pullPolicy: IfNotPresent
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+            ephemeral-storage: 50Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+            ephemeral-storage: 256Mi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+        ephemeral-storage: 100Mi
+      limits:
+        cpu: 750m
+        memory: 768Mi
+        ephemeral-storage: 500Mi
+
+    # Per-pod scratch at /mlrun/db (unused SQLite + logCollector cache); a shared RWO PVC
+    # would deadlock replicas, so emptyDir. Nulled explicitly to beat Helm's deep merge.
+    volumes:
+      storageOverride:
+        emptyDir: {}
+        persistentVolumeClaim: null
+
+    # No shared PVC. Real state is in MySQL (metadata) and SeaweedFS S3 (artifacts),
+    # so losing the local scratch on restart is harmless.
+    persistence:
+      enabled: false
+    
+    # KFP multi-user namespace fix (MLRun 1.10 bug: create_pipeline drops namespace).
+    # Remove once upstream ships the fix. Don't change this section or remove any space.
+    extraInitContainers:
+      - name: patch-kfp-namespace
+        image: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mlrun-api:1.10.0
+        command: ["python", "-c"]
+        args:
+          - |
+            import shutil
+            # --- Patch endpoints/pipelines.py ---
+            src = "/mlrun/server/py/services/api/api/endpoints/pipelines.py"
+            dst = "/patches/pipelines_endpoints.py"
+            with open(src) as f:
+                code = f.read()
+            code = code.replace(
+                'run_name: str = fastapi.Query("", alias="run"),\n    auth_info',
+                'run_name: str = fastapi.Query("", alias="run"),\n    namespace: typing.Optional[str] = fastapi.Query(None),\n    auth_info',
+            )
+            code = code.replace(
+                'run_name=run_name,\n        project=project,\n    )\n    return response',
+                'run_name=run_name,\n        project=project,\n        namespace=namespace,\n    )\n    return response',
+            )
+            code = code.replace(
+                'project: typing.Optional[str] = None,\n):\n    # Prefix the experiment',
+                'project: typing.Optional[str] = None,\n    namespace: typing.Optional[str] = None,\n):\n    # Prefix the experiment',
+            )
+            code = code.replace(
+                'data,\n        arguments,\n    )',
+                'data,\n        arguments,\n        namespace=namespace,\n    )',
+            )
+            with open(dst, "w") as f:
+                f.write(code)
+            # --- Patch crud/pipelines.py ---
+            src2 = "/mlrun/server/py/services/api/crud/pipelines.py"
+            dst2 = "/patches/pipelines_crud.py"
+            with open(src2) as f:
+                code2 = f.read()
+            code2 = code2.replace(
+                'arguments: typing.Optional[dict] = None,\n    ):\n        if arguments',
+                'arguments: typing.Optional[dict] = None,\n        namespace: typing.Optional[str] = None,\n    ):\n        namespace = namespace or "aibplus-profile"\n        if arguments',
+            )
+            code2 = code2.replace(
+                'kfp_client = self._initialize_kfp_client()\n            experiment = mlrun_pipelines.models.PipelineExperiment(\n                kfp_client.create_experiment(name=experiment_name)',
+                'kfp_client = self._initialize_kfp_client()\n            experiment = mlrun_pipelines.models.PipelineExperiment(\n                kfp_client.create_experiment(name=experiment_name, namespace=namespace)',
+            )
+            with open(dst2, "w") as f:
+                f.write(code2)
+            print("KFP namespace patches applied")
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
+        volumeMounts:
+          - name: kfp-patches
+            mountPath: /patches
+
+    extraVolumes:
+      - name: kfp-patches
+        emptyDir: {}
+
+    extraVolumeMounts:
+      - name: kfp-patches
+        mountPath: /mlrun/server/py/services/api/api/endpoints/pipelines.py
+        subPath: pipelines_endpoints.py
+        readOnly: true
+      - name: kfp-patches
+        mountPath: /mlrun/server/py/services/api/crud/pipelines.py
+        subPath: pipelines_crud.py
+        readOnly: true
+    # ── End KFP fix ───────────────────────────────────────────────────
+
+    envFrom:
+      - configMapRef:
+          name: mlrun-common-env
+      - configMapRef:
+          name: mlrun-pipelines-config
+          optional: true
+      - configMapRef:
+          name: mlrun-spark-config
+          optional: true
+      - configMapRef:
+          name: mlrun-override-env
+          optional: true
+      - secretRef:
+          name: minio-credentials
+      - secretRef:
+          name: mlrun-redis-credentials
+          optional: true
+
+    extraEnvKeyValue:
+      MLRUN_IMAGES_REGISTRY: "europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/"
+      # Resolves the short name "mlrun/mlrun" to the hardened tag; without it job pods land
+      # on :1.10.0. MLRUN_DEFAULT_BASE_IMAGE only applies when BUILDING an image.
+      MLRUN_IMAGES_TAG: "1.10.0-harden"
+      MLRUN_DEFAULT_BASE_IMAGE: "europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mlrun/mlrun:1.10.0-harden"
+      MLRUN_KFP_IMAGE: "europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mlrun-kfp:1.10.0"
+      S3_ENDPOINT_URL: "http://seaweedfs-s3.aib-data.svc.cluster.local:8333"
+      AWS_ENDPOINT_URL_S3: "http://seaweedfs-s3.aib-data.svc.cluster.local:8333"
+      AWS_S3_ENDPOINT_URL: "http://seaweedfs-s3.aib-data.svc.cluster.local:8333"
+      # SeaweedFS S3 only supports path-style addressing; force boto/aioboto
+      # away from virtual-hosted-style requests.
+      S3_ADDRESSING_STYLE: "path"
+      S3_VERIFY_SSL: "false"
+      # Default SA for MLRun job/function pods, instead of the namespace "default" SA.
+      # It must exist in the target namespace before jobs are submitted.
+      MLRUN_FUNCTION__SPEC__SERVICE_ACCOUNT__DEFAULT: "mlrun-job-runner"
+      # FQDN required because pipeline/function pods run in aibplus-profile, not aib-system
+      MLRUN_HTTPDB__API_URL: "http://mlrun-api.aib-system.svc.cluster.local:8080"
+      # Default image pull policy and service type for MLRun function pods.
+      # Avoids having to set these in every notebook.
+      MLRUN_FUNCTION__SPEC__IMAGE_PULL_POLICY__DEFAULT: "IfNotPresent"
+      MLRUN_HTTPDB__NUCLIO__DEFAULT_SERVICE_TYPE: "ClusterIP"
+      # Server-side KFP pipeline state polling, so MLRun updates run status in the
+      # UI and API without relying on client-side polling from notebooks.
+      MLRUN_HTTPDB__LOGS__PIPELINES__PULL_STATE__MODE: "enabled"
+      # KFP API lives in aib-system; without this MLRun builds the URL from the
+      # pipeline namespace (ml-pipeline.aibplus-profile), which doesn't exist.
+      MLRUN_KFP_URL: "http://ml-pipeline.aib-system.svc.cluster.local:8888"
+
+      # MLRun Function Hub — the default mlrun.github.io/marketplace is unreachable (no
+      # egress to github.io). Uncomment Option A to disable it, or B for an internal mirror.
+      #
+      # Option A — disable the default hub:
+      # MLRUN_HUB__DEFAULT_SOURCE__CREATE: "false"
+      # MLRUN_HUB__DEFAULT_SOURCE__URL: ""
+      #
+      # Option B — mirror mlrun/functions; URL must serve /functions/<channel>/catalog.json:
+      # MLRUN_HUB__DEFAULT_SOURCE__URL: "https://github.vodafone.com/pages/<org>/mlrun-marketplace"
+      # MLRUN_HUB__DEFAULT_SOURCE__CHANNEL: "master"
+
+    extraPersistentVolumeMounts: ~
+
+  ui:
+    fullnameOverride: mlrun-ui
+    replicaCount: 1
+
+    image:
+      repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mlrun-ui
+      tag: 1.10.0
+      pullPolicy: IfNotPresent
+
+    ingress:
+      # Ingress for MLRun UI. Same reasoning as api.ingress.
+      enabled: false
+    service:
+      # Service type for MLRun UI.
+      # Options: same as api.service.type above.
+      type: ClusterIP
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      runAsNonRoot: true
+    podSecurityContext:
+      runAsNonRoot: true
+    # Resource limits for the MLRun UI pod.
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+        ephemeral-storage: 100Mi
+      limits:
+        cpu: 100m
+        memory: 96Mi
+        ephemeral-storage: 500Mi
+
+  db:
+    enabled: false
+    name: db
+    existingDsnSecret: true
+    fullnameOverride: mlrun-db
+    persistence:
+      enabled: false
+
+  httpDB:
+    dbType: mysql
+    dirPath: "/mlrun/db"
+
+    # External mlrun-db (bitnami mysql) in aib-data; password must match mysql-credentials,
+    # supplied at install: --set-string mlrun.httpDB.dsn="mysql+pymysql://root:<pw>@mlrun-db.aib-data.svc.cluster.local:3306/mlrun"
+    dsn: mysql+pymysql://root@mlrun-db-primary.aib-data.svc.cluster.local:3306/mlrun
+    oldDsn: sqlite:////mlrun/db/mlrun.db?check_same_thread=false
+
+  modelMonitoring:
+    dsn:
+
+  ce:
+    mode: full
+
+  
+# Jupyter Notebook
+jupyterNotebook:
+  enabled: false
+  serviceAccount:
+    create: false
+  persistence:
+    enabled: false
+
+
+# S3 object store — SeaweedFS in aib-data, no MinIO is created here. The `minio` key is only
+# mlrun-ce's integration surface (helpers read externalHost + service.port); creds come from a Secret.
+minio:
+  enabled: false
+
+  # Cross-namespace endpoint for the SeaweedFS S3 gateway; _helpers.tpl resolves
+  # it for MLRun, Jupyter, Pipelines and Argo.
+  externalHost: seaweedfs-s3.aib-data.svc.cluster.local
+
+  # Credentials live in this Secret; do NOT add inline rootUser/rootPassword
+  # — they would override the Secret and put plaintext keys into values.yaml.
+  existingSecret: "minio-credentials"
+
+  service:
+    port: 8333
+
+
+# =============================================================================
+
+pipelines:
+  enabled: false
+  crd:
+    enable: false
+  priority_class:
+    enable: false
+
+spark-operator:
+  enabled: false
+  image:
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/spark-operator
+    tag: "2.1.0"
+
+mpi-operator:
+  deployment:
+    create: false
+
+  image:
+    deployment:
+      repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mpi-operator
+      tag: v0.2.3-igz
+    kubectlDelivery:
+      repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/mpi-kubectl-delivery
+      tag: v0.2.3
+
+# Kube Prometheus Stack - DISABLED
+kube-prometheus-stack:
+  enabled: false
+  grafana:
+    enabled: false
+    service:
+      nodePort: 0
+
+# TDengine — time-series store for MLRun model monitoring (drift, data quality).
+# Disabled; enable it or point MLRun at an external time-series DB.
+tdengine:
+  enabled: false
+
+# Kafka — real-time model monitoring and event-driven function triggers.
+# Disabled: deployed separately in aib-data, and MLRun connects to it at runtime.
+kafka:
+  enabled: false

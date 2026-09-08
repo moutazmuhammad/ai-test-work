@@ -1,0 +1,79 @@
+# =============================================================================
+# Dex — AWS overrides
+#
+# ── Domains to change per market ──────────────────────────────────────────────
+#   Dex issuer     : dex.dev.aibplus.vodacom.aws.corp   → dex.<env>.aibplus.<market>.aws.corp
+#   Auth callback  : auth.dev.aibplus.vodacom.aws.corp  → auth.<env>.aibplus.<market>.aws.corp
+#   IdP (NetIQ)    : login.ppent.vodacom.co.za          → <idp-host> (Change by AIB+ Market)
+#   ECR image      : 490083271972.dkr.ecr.af-south-1... → <account>.dkr.ecr.<region>...
+# =============================================================================
+
+image:
+  repository: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images/dex  # Change by AIB+ Market
+
+config:
+  issuer: "https://dex.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+  logger:
+    level: info
+    format: text
+  storage:
+    type: kubernetes
+    config:
+      inCluster: true
+  web:
+    http: 0.0.0.0:5556
+  grpc:
+    addr: 0.0.0.0:5557
+  telemetry:
+    http: 0.0.0.0:5558
+  expiry:
+    idTokens: "1h"
+    refreshTokens:
+      validIfNotUsedFor: "24h"
+      absoluteLifetime: "168h"
+  staticClients:
+    - name: '{{ .Env.DEX_OAUTH2_PROXY_CLIENT_ID }}'
+      id: '{{ .Env.DEX_OAUTH2_PROXY_CLIENT_ID }}'
+      secret: '{{ .Env.DEX_OAUTH2_PROXY_CLIENT_SECRET }}'
+      scopes:
+        - openid
+        - profile
+        - email
+        - '{{ .Env.OIDC_GROUPS_CUSTOM_SCOPE_NAME }}'
+      redirectURIs:
+        - https://auth.dev.aibplus.vodacom.aws.corp/oauth2/callback  # Change by AIB+ Market
+  connectors:
+    - type: oidc
+      id: AIBPlus
+      name: AIB Plus
+      config:
+        issuer: '{{ .Env.OIDC_ISSUER }}'
+        clientID: '{{ .Env.DEX_OIDC_CLIENT_ID }}'
+        clientSecret: '{{ .Env.DEX_OIDC_CLIENT_SECRET }}'
+        redirectURI: https://dex.dev.aibplus.vodacom.aws.corp/callback  # Change by AIB+ Market
+        scopes:
+          - openid
+          - profile
+          - email
+          - '{{ .Env.OIDC_GROUPS_CUSTOM_SCOPE_NAME }}'
+        claimMapping:
+          userIDKey: sub
+          userNameKey: preferred_username
+          preferred_username: preferred_username
+          email: email
+          name: name
+          groups: '{{ .Env.OIDC_GROUPS_CUSTOM_SCOPE_NAME }}'
+        insecureEnableGroups: true
+        insecureSkipEmailVerified: true
+        getUserInfo: true
+        overrideClaimMapping: true
+        providerDiscoveryOverrides:
+          tokenURL: https://login.ppent.vodacom.co.za/nidp/oauth/nam/token?resourceServer=AIB  # Change by AIB+ Market
+
+  oauth2:
+    skipApprovalScreen: false
+
+  frontend:
+    issuer: "AIB Plus"
+    theme: "aibplus"
+    dir: "/srv/dex/web"

@@ -1,0 +1,70 @@
+global:
+  externalHostAddress: mlrun.${BASE_DOMAIN}
+  registry:
+    url: dummy  # since Nuclio disabled <YOUR_DOCKER_REGISTRY>
+  
+nuclio:
+  enabled: true
+  dashboard:
+    service:
+      type: ClusterIP
+    env:
+      - name: NUCLIO_DASHBOARD_ASSETS_PATH
+        value: "/nuclio/"
+
+pipelines:
+  enabled: false
+
+spark-operator:
+  enabled: false
+
+mpi-operator:
+  deployment:
+    create: false
+
+minio:
+  enabled: false
+
+kafka:
+  enabled: false
+
+tdengine:
+  enabled: false
+
+kube-prometheus-stack:
+  enabled: false
+
+jupyterNotebook:
+  enabled: false
+
+mlrun:
+  enabled: true
+
+  api:
+    service:
+      type: ClusterIP
+    extraEnv:
+      - name: MLRUN_HTTPDB__AUTHENTICATION__MODE
+        value: "none"  # Use "none" when delegating auth to oauth2-proxy
+      - name: MLRUN_HTTPDB__AUTHENTICATION__X_REMOTE_USER_HEADER
+        value: "X-Auth-Request-Email" # Tells API to treat this header as the User ID
+      - name: MLRUN_HTTPDB__AUTHENTICATION__X_REMOTE_GROUP_HEADER
+        value: "X-Auth-Request-Groups"
+
+
+  ui:
+    service:
+      type: ClusterIP
+    extraEnv:
+      - name: MLRUN_UI_SHOW_USER_INFO
+        value: "true"
+      - name: MLRUN_UI_USER_ID_HEADER # Some versions of CE UI use this
+        value: "X-Auth-Request-Email"
+      - name: MLRUN_API_PROXY_URL
+        value: "http://mlrun-api.aib-system.svc.cluster.local:8080"
+        
+
+  db:
+    persistence:
+      size: 5Gi
+

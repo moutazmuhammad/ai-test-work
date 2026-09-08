@@ -1,0 +1,12 @@
+{{- range .Values.namespaces }}
+{{- if .resourceQuota }}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ default "default-quota" .resourceQuota.name }}
+  namespace: {{ .name }}
+spec:
+  {{- toYaml .resourceQuota.spec | nindent 2 }}
+{{- end }}
+{{- end }}

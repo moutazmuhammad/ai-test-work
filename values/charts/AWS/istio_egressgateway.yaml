@@ -1,0 +1,9 @@
+# =============================================================================
+# Istio Egress Gateway — AWS overrides
+#
+# Only GCP-specific values are overridden here:
+#   - global.hub: Artifact Registry → ECR
+# =============================================================================
+
+global:
+  hub: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images

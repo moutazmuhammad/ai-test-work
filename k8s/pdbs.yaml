@@ -1,0 +1,115 @@
+# PodDisruptionBudgets for components whose Helm charts lack built-in PDB support.
+# Rule: minAvailable=1 only for components with replicas > 1.
+# Single-replica components (mlrun-api-chief, nuclio-controller, seaweedfs-admin)
+# do NOT get a PDB — a PDB on a single replica blocks all node drains.
+
+# =============================================================================
+# aib-system namespace — MLRun & Nuclio
+# =============================================================================
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mlrun-api-worker-pdb
+  namespace: aib-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mlrun
+      app.kubernetes.io/component: api
+      app.kubernetes.io/sub-component: worker
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mlrun-ui-pdb
+  namespace: aib-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mlrun-ui
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nuclio-dashboard-pdb
+  namespace: aib-system
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      nuclio.io/app: dashboard
+
+# =============================================================================
+# aib-data namespace — SeaweedFS
+# =============================================================================
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-master-pdb
+  namespace: aib-data
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: master
+      app.kubernetes.io/name: seaweedfs
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-volume-pdb
+  namespace: aib-data
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: volume
+      app.kubernetes.io/name: seaweedfs
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-filer-pdb
+  namespace: aib-data
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: filer
+      app.kubernetes.io/name: seaweedfs
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-s3-pdb
+  namespace: aib-data
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: s3
+      app.kubernetes.io/name: seaweedfs
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: seaweedfs-worker-pdb
+  namespace: aib-data
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      app.kubernetes.io/name: seaweedfs

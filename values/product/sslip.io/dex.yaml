@@ -1,0 +1,129 @@
+############### required user input for dex:
+# export BASE_DOMAIN="34.54.147.73.sslip.io"
+# export OIDC_ISSUER="https://keycloak.${BASE_DOMAIN}/realms/aibplus_realm"
+# export OIDC_GROUPS_CUSTOM_SCOPE_NAME="groups"
+# secret (dex-secret) in namespace (aib-auth) with fields:
+#   DEX_OAUTH2_PROXY_CLIENT_ID
+#   DEX_OAUTH2_PROXY_CLIENT_SECRET
+#   DEX_OIDC_CLIENT_ID # created at NAM side
+#   DEX_OIDC_CLIENT_SECRET # generated at NAM side
+
+
+envFrom:
+  - secretRef:
+      name: dex-secret
+
+commonLabels:
+  app: dex
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          app: dex
+      topologyKey: kubernetes.io/hostname
+
+replicaCount: 3
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 1
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+envVars:
+  - name: OIDC_ISSUER
+    value: "${OIDC_ISSUER}"
+  - name: OIDC_GROUPS_CUSTOM_SCOPE_NAME
+    value: "${OIDC_GROUPS_CUSTOM_SCOPE_NAME}"
+
+config:
+  issuer: "https://dex.${BASE_DOMAIN}"
+  storage:
+    type: kubernetes
+    config:
+      inCluster: true # store state (clients, etc.) in k8s secrets
+  web:
+    http: 0.0.0.0:5556
+  grpc:
+    addr: 0.0.0.0:5557
+  telemetry:
+    http: 0.0.0.0:5558
+  expiry:
+    idTokens: "1h"
+    refreshTokens:
+      validIfNotUsedFor: "24h"
+      absoluteLifetime: "168h"
+  staticClients:
+    - name: '{{ .Env.DEX_OAUTH2_PROXY_CLIENT_ID }}'
+      id: '{{ .Env.DEX_OAUTH2_PROXY_CLIENT_ID }}'
+      secret: '{{ .Env.DEX_OAUTH2_PROXY_CLIENT_SECRET }}'
+      scopes:
+        - openid
+        - profile
+        - email
+        - groups
+      redirectURIs:
+        - https://auth.${BASE_DOMAIN}/oauth2/callback
+  connectors:
+    - type: oidc
+      id: AIBPlus
+      name: AIB Plus
+      config:
+        insecureSkipVerify: true # temp
+        issuer: '{{ .Env.OIDC_ISSUER }}'
+        clientID: '{{ .Env.DEX_OIDC_CLIENT_ID }}'
+        clientSecret: '{{ .Env.DEX_OIDC_CLIENT_SECRET }}'
+        redirectURI: https://dex.${BASE_DOMAIN}/callback
+        scopes:
+          - openid
+          - profile
+          - email
+          - '{{ .Env.OIDC_GROUPS_CUSTOM_SCOPE_NAME }}'
+        claimMapping:
+          userIDKey: sub 
+          userNameKey: preferred_username    
+          preferred_username: preferred_username
+          email: email
+          name: name
+          groups: '{{ .Env.OIDC_GROUPS_CUSTOM_SCOPE_NAME }}'
+        insecureEnableGroups: true
+        insecureSkipEmailVerified: true
+
+
+  frontend:
+    issuer: "AIB Plus"
+    theme: "aibplus"
+    dir: "/srv/dex/web" 
+
+volumes:
+  - name: theme-volume
+    configMap:
+      name: dex-aibplus-theme
+  - name: theme-logo
+    configMap:
+      name: dex-aibplus-aib-logo
+
+volumeMounts:
+  - name: theme-volume
+    mountPath: /srv/dex/web/themes/aibplus/styles.css
+    subPath: styles.css
+  - name: theme-logo
+    mountPath: /srv/dex/web/themes/aibplus/logo.png
+    subPath: logo.png
+  - name: theme-logo
+    mountPath: /srv/dex/web/themes/aibplus/favicon.png
+    subPath: logo.png

@@ -1,0 +1,2907 @@
+policyExceptions:
+
+  # Upstream Kubeflow ships these platform deployments without ephemeral-storage
+  # requests and (for some) CPU/memory limits, so a fresh Kubeflow install is
+  # rejected at admission. Scoped to the named workloads rather than the whole
+  # namespace, so any new component that omits them still gets caught.
+  # Wildcards cover the generated ReplicaSet and Pod names.
+  kubeflow-platform-resources:
+    enabled: true
+    exceptions:
+      - policyName: aib-require-ephemeral-storage
+        ruleNames:
+          - require-ephemeral-storage-requests
+          - autogen-require-ephemeral-storage-requests
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - aib-system
+        names:
+          - "cache-server*"
+          - "dashboard*"
+          - "jupyter-web-app-deployment*"
+          - "kubeflow-pipelines-profile-controller*"
+          - "metadata-envoy-deployment*"
+          - "metadata-grpc-deployment*"
+          - "metadata-writer*"
+          - "ml-pipeline-scheduledworkflow*"
+          - "ml-pipeline-viewer-crd*"
+          - "notebook-controller-deployment*"
+          - "poddefaults-webhook-deployment*"
+          - "profiles-deployment*"
+          - "tensorboards-web-app-deployment*"
+          - "volumes-web-app-deployment*"
+          - "workflow-runner-*"
+
+  kyverno-system:
+    enabled: true
+    exceptions:
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+      - policyName: restrict-linux-capabilities
+        ruleNames:
+          - restrict-added-capabilities
+          - autogen-restrict-added-capabilities
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+          - Job
+          - CronJob
+        namespaces:
+          - kyverno
+
+  istio-gateway-readonly-rootfs:
+    enabled: true
+    exceptions:
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - istio-system
+        names:
+          - "istio-ingressgateway*"
+          - "istio-egressgateway*"
+
+  nuclio-kaniko-build-jobs:
+    enabled: true
+    exceptions:
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+    # MLRun builds with kaniko too, under a different name. Without the
+    # extra patterns those pods are denied at admission (root + rw rootfs).
+    match:
+      - kinds:
+          - Job
+          - Pod
+        namespaces:
+          - aib-system
+        names:
+          - "nuclio-kanikojob*"
+          - "mlrun-build*"
+          - "*kaniko*"
+
+  nuclio-function-pods:
+    enabled: true
+    exceptions:
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: disallow-latest-tag
+        ruleNames:
+          - validate-image-tag
+          - autogen-validate-image-tag
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+      - policyName: aib-require-ephemeral-storage
+        ruleNames:
+          - require-ephemeral-storage-requests
+          - autogen-require-ephemeral-storage-requests
+    match:
+      - kinds:
+          - Deployment
+          - ReplicaSet
+          - Pod
+        namespaces:
+          - aib-system
+        selector:
+          matchLabels:
+            nuclio.io/class: function
+
+  mlrun-job-pods:
+    enabled: true
+    exceptions:
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+    match:
+      - kinds:
+          - Pod
+          - Job
+        namespaces:
+          - aib-system
+        selector:
+          matchExpressions:
+            - key: mlrun/class
+              operator: Exists
+
+  mlrun-nuclio-security:
+    enabled: true
+    exceptions:
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - aib-system
+        names:
+          - "nuclio-controller*"
+          - "nuclio-dashboard*"
+          - "mlrun-api*"
+          - "mlrun-ui*"
+
+  kubeflow-pipelines-security:
+    enabled: true
+    exceptions:
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - aib-system
+        names:
+          - "ml-pipeline*"
+          - "metadata-*"
+          - "cache-server*"
+          - "workflow-controller*"
+          - "ml-pipeline-viewer*"
+          - "ml-pipeline-visualizationserver*"
+          - "notebook-controller*"
+
+  aibplus-profile-notebooks:
+    enabled: true
+    exceptions:
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+      - policyName: restrict-linux-capabilities
+        ruleNames:
+          - restrict-added-capabilities
+          - autogen-restrict-added-capabilities
+      - policyName: drop-net-raw-capability
+        ruleNames:
+          - deny-net-raw
+          - autogen-deny-net-raw
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+    match:
+      - kinds:
+          - Pod
+          - StatefulSet
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - aibplus-profile
+
+  rai-init-containers:
+    enabled: true
+    exceptions:
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - aib-system
+        names:
+          - "rai*"
+
+  dex-readonly-rootfs:
+    enabled: true
+    exceptions:
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - aib-auth
+        names:
+          - "dex*"
+
+  prometheus-node-exporter:
+    enabled: true
+    exceptions:
+      - policyName: restrict-host-namespaces
+        ruleNames:
+          - deny-host-ns
+          - autogen-deny-host-ns
+      - policyName: restrict-hostpath-volumes
+        ruleNames:
+          - deny-hostpath-labeled
+          - autogen-deny-hostpath-labeled
+      - policyName: disallow-hostport
+        ruleNames:
+          - deny-hostport
+          - autogen-deny-hostport
+    match:
+      - kinds:
+          - Pod
+          - DaemonSet
+        namespaces:
+          - aib-ops
+        names:
+          - "prometheus-prometheus-node-exporter*"
+
+  external-secrets-otel-init:
+    enabled: true
+    exceptions:
+      - policyName: disallow-root-user
+        ruleNames:
+          - deny-root-containers
+          - autogen-deny-root-containers
+          - deny-root-init-containers
+          - autogen-deny-root-init-containers
+      - policyName: restrict-privilege-escalation
+        ruleNames:
+          - deny-priv-esc-containers
+          - autogen-deny-priv-esc-containers
+          - deny-priv-esc-init
+          - autogen-deny-priv-esc-init
+      - policyName: enforce-readonly-root-filesystem
+        ruleNames:
+          - require-readonly-fs-containers
+          - autogen-require-readonly-fs-containers
+          - require-readonly-fs-init
+          - autogen-require-readonly-fs-init
+      - policyName: require-drop-all-capabilities
+        ruleNames:
+          - require-drop-all
+          - autogen-require-drop-all
+      - policyName: require-resource-limits
+        ruleNames:
+          - validate-resource-limits
+          - autogen-validate-resource-limits
+          - validate-resource-limits-init
+          - autogen-validate-resource-limits-init
+    match:
+      - kinds:
+          - Pod
+          - Deployment
+          - ReplicaSet
+        namespaces:
+          - external-secrets
+
+# Policies
+
+policies:
+
+  # Phase 1 — Supply Chain & Admission Controls
+
+  # P1-01 — Disallow Public Images
+  # Blocks all container images not from approved private registries.
+  disallow-public-images:
+    enabled: true
+    type: validate
+    title: Disallow Public Images
+    category: Supply Chain Security
+    severity: critical
+    validationFailureAction: Enforce
+    description: >-
+      Only allow container images from approved private registries.
+      All public registries are blocked at admission time.
+    rules:
+      - name: validate-private-registry
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        # preconditions:
+        #   all:
+        #     - key: "{{ request.object.metadata.labels.\"policy.security/level\" || '' }}"
+        #       operator: NotEquals
+        #       value: "trusted-system"
+        message: >-
+          Images must come from an approved private registry.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.image }}"
+                  operator: NotEquals
+                  value: "auto"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: AnyNotIn
+                    value:
+                      - "registry.eu-central-1.harbor.vodafone.com/*"
+                      - "europe-west1-docker.pkg.dev/*"
+                      - "*.dkr.ecr.*.amazonaws.com/*"
+                      - "*.dkr.ecr.*.amazonaws.com.cn/*"
+                      - "registry.redhat.io/*"
+                      - "quay.io/openshift-release-dev/*"
+
+  # P1-02 — Disallow latest Tag
+  # Blocks images using :latest tag or no tag at all.
+  disallow-latest-tag:
+    enabled: true
+    type: validate
+    title: Disallow latest Tag
+    category: Supply Chain Security
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      Deny pods whose container images use the latest tag or have
+      no tag at all. Every image must specify an explicit version tag.
+    rules:
+      - name: validate-image-tag
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          The image tag latest is not allowed and images without a
+          tag are not allowed. Use a pinned version tag.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.image }}"
+                    operator: Equals
+                    value: "*:latest"
+                  - key: "{{ element.image }}"
+                    operator: Equals
+                    value: "*/latest"
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+                - key: "{{ element.image }}"
+                  operator: NotEquals
+                  value: "*:*"
+                - key: "{{ element.image }}"
+                  operator: NotEquals
+                  value: "*@*"
+            deny: {}
+
+  # P1-03 — Require Image Digest (Audit)
+  # Flags images not pinned by digest (@sha256:...) for immutability.
+  require-image-digest:
+    enabled: true
+    type: validate
+    title: Require Image Digest
+    category: Supply Chain Security
+    severity: low
+    validationFailureAction: Audit
+    description: >-
+      Audit images that are not pinned by digest (@sha256:...).
+      Tags are mutable and can be overwritten in the registry.
+    rules:
+      - name: check-image-digest
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Images should use a digest (@sha256:...) for immutability.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "*@sha256:*"
+
+  # P1-04 — Disallow Container Socket Mounts
+  # Blocks hostPath mounts for docker.sock, containerd.sock, cri-o.sock.
+  disallow-container-socket-mounts:
+    enabled: true
+    type: validate
+    title: Disallow Container Socket Mounts
+    category: Pod Security
+    severity: critical
+    validationFailureAction: Enforce
+    description: >-
+      Block hostPath volume mounts for container runtime sockets
+      (docker.sock, containerd.sock, cri-o.sock).
+    rules:
+      - name: deny-runtime-socket-mounts
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.volumes[?hostPath] || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        message: >-
+          Mounting container runtime sockets is not allowed.
+        foreach:
+          - list: "request.object.spec.volumes[?hostPath]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.hostPath.path }}"
+                    operator: Equals
+                    value: "*/docker.sock"
+                  - key: "{{ element.hostPath.path }}"
+                    operator: Equals
+                    value: "*/containerd.sock"
+                  - key: "{{ element.hostPath.path }}"
+                    operator: Equals
+                    value: "*/cri-o.sock"
+
+  # P1-05 — Disable Ingress Snippet Annotations
+  # Blocks annotations containing "snippet" to prevent CVE-2021-25742.
+  disable-ingress-snippet-annotations:
+    enabled: true
+    type: validate
+    title: Disable Ingress Snippet Annotations
+    category: Networking
+    severity: critical
+    validationFailureAction: Enforce
+    background: false
+    description: >-
+      Block Ingress annotations containing snippet to prevent
+      CVE-2021-25742 arbitrary code injection via nginx snippets.
+    rules:
+      - name: deny-ingress-snippets
+        match:
+          - kinds:
+              - Ingress
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.annotations || `{}` | keys(@) | length(@) }}"
+              operator: GreaterThan
+              value: 0
+        message: >-
+          Ingress snippet annotations are not allowed (CVE-2021-25742).
+        foreach:
+          - list: "request.object.metadata.annotations | keys(@)"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element }}"
+                    operator: Equals
+                    value: "*snippet*"
+
+  # P1-06 — Disallow Default Namespace
+  # Rejects all resources deployed to the default namespace.
+  disallow-default-namespace:
+    enabled: true
+    type: validate
+    title: Disallow Default Namespace
+    category: Namespace Isolation
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Reject all resources deployed to the default namespace.
+    rules:
+      - name: deny-default-namespace
+        match:
+          - kinds:
+              - Pod
+              - Deployment
+              - StatefulSet
+              - DaemonSet
+              - Service
+              - ConfigMap
+              - Secret
+              - Ingress
+              - Job
+              - CronJob
+              - ReplicaSet
+            namespaces:
+              - default
+        message: >-
+          Resources must not be deployed to the default namespace.
+        deny: {}
+
+  # P1-07 — Disallow Empty Ingress Host
+  # Ingress must define a non-empty host in spec.rules.
+  disallow-empty-ingress-host:
+    enabled: true
+    type: validate
+    title: Disallow Empty Ingress Host
+    category: Networking
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Ingress resources must define a non-empty host in spec.rules.
+    rules:
+      - name: deny-empty-ingress-host
+        match:
+          - kinds:
+              - Ingress
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Ingress must define a non-empty host in spec.rules.
+        pattern:
+          spec:
+            rules:
+              - host: "?*"
+
+  # P1-08 — Prevent ArgoCD Default Project Usage
+  # ArgoCD Applications must not use spec.project "default".
+  prevent-argocd-default-project:
+    enabled: true
+    type: validate
+    title: Prevent ArgoCD Default Project Usage
+    category: GitOps Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      ArgoCD Applications must not use the default project.
+    rules:
+      - name: deny-default-project
+        match:
+          - kinds:
+              - argoproj.io/*/Application
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          ArgoCD Applications must not use spec.project default.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.project }}"
+                operator: Equals
+                value: default
+
+  # P1-09 — Disallow NodePort and LoadBalancer Services
+  # All external traffic must ingress through the ingress controller.
+  disallow-nodeport-services:
+    enabled: true
+    type: validate
+    title: Disallow NodePort and LoadBalancer Services
+    category: Networking
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Block Service type NodePort and LoadBalancer. All external
+      traffic must ingress through the ingress controller.
+    rules:
+      - name: deny-nodeport-loadbalancer
+        match:
+          - kinds:
+              - Service
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        # istio-system and cert-manager are deliberately not matched: the Istio
+        # ingress gateway and cert-manager webhooks need a LoadBalancer Service.
+        # They were previously listed in match and then removed again by an
+        # exclude block - same result, harder to read.
+        message: >-
+          NodePort and LoadBalancer services are not allowed.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.type || 'ClusterIP' }}"
+                operator: Equals
+                value: NodePort
+              - key: "{{ request.object.spec.type || 'ClusterIP' }}"
+                operator: Equals
+                value: LoadBalancer
+
+  # P1-10 — Prefer ExternalSecret over plain Secrets (Audit)
+  # Flags manual Opaque secrets; use ExternalSecret with GCP Secret Manager.
+  prefer-external-secrets:
+    enabled: true
+    type: validate
+    title: Prefer ExternalSecret over plain Secrets
+    category: Secrets Management
+    severity: low
+    validationFailureAction: Audit
+    background: false
+    description: >-
+      Manual Opaque secrets are discouraged. Use ExternalSecret
+      resources backed by GCP Secret Manager for centralised
+      management, rotation, and audit trails.
+    rules:
+      - name: audit-manual-opaque-secrets
+        match:
+          - kinds:
+              - Secret
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        exclude:
+          - clusterRoles:
+              - system:*
+              - external-secrets*
+              - cert-manager*
+              - cluster-admin
+        preconditions:
+          all:
+            # `|| ''` is required: kube-prometheus-stack ships the alertmanager
+            # Secret with no `type` field, and the unguarded lookup errors out.
+            - key: "{{ request.object.type || '' }}"
+              operator: Equals
+              value: Opaque
+        message: >-
+          Manual Opaque secrets are discouraged. Use an ExternalSecret
+          resource with the ClusterSecretStore instead.
+        deny: {}
+
+  # P1-11 — Block IAM Role Binding on Default ServiceAccount.
+  # Use a dedicated SA (e.g. mlrun-job-runner) for workload identity instead.
+
+  block-iam-on-default-sa:
+    enabled: true
+    type: validate
+    title: Block IAM Role Binding on Default ServiceAccount
+    category: Identity Security
+    severity: critical
+    validationFailureAction: Enforce
+    background: true
+    description: >-
+      Blocks IAM role annotations (AWS EKS and GCP GKE workload
+      identity) on the default ServiceAccount in any namespace.
+      Workloads must use dedicated service accounts for cloud IAM
+      bindings.
+    rules:
+      - name: deny-iam-annotation-on-default-sa
+        match:
+          - kinds:
+              - ServiceAccount
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.name }}"
+              operator: Equals
+              value: default
+            # Without this, keys(@) on a SA with no annotations throws and the
+            # request is rejected with an error - which blocked creating the
+            # default ServiceAccount in a brand new namespace. Same guard as
+            # disable-ingress-snippet-annotations.
+            - key: "{{ request.object.metadata.annotations || `{}` | keys(@) | length(@) }}"
+              operator: GreaterThan
+              value: 0
+        message: >-
+          The default ServiceAccount must not be annotated with an IAM
+          role. Create a dedicated ServiceAccount and bind the IAM role
+          to it instead.
+        foreach:
+          - list: "request.object.metadata.annotations | keys(@)"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element }}"
+                    operator: Equals
+                    value: "eks.amazonaws.com/role-arn"
+                  - key: "{{ element }}"
+                    operator: Equals
+                    value: "iam.gke.io/gcp-service-account"
+
+  # P1-12 — Restrict profiles-controller ServiceAccount
+  # Only the profiles-deployment (app=profile-controller) may run under that SA.
+  restrict-profiles-controller-service-account:
+    enabled: true
+    type: validate
+    title: Restrict Profiles Controller ServiceAccount
+    category: Identity Security
+    severity: critical
+    validationFailureAction: Enforce
+    background: false
+    description: >-
+      The profiles-controller-service-account holds cluster-wide rights to
+      create Profiles and namespaces. Only the profile-controller pod may
+      use it; any other pod requesting it is denied at admission.
+    rules:
+      - name: only-profile-controller-can-use-sa
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+        preconditions:
+          all:
+            - key: "{{ request.operation }}"
+              operator: Equals
+              value: CREATE
+            - key: "{{ request.object.spec.serviceAccountName || 'default' }}"
+              operator: Equals
+              value: profiles-controller-service-account
+        message: >-
+          The profiles-controller-service-account can only be used by the
+          profiles-deployment (app=profile-controller).
+        pattern:
+          metadata:
+            labels:
+              app: profile-controller
+
+  # P1-13 - Restrict ServiceAccounts usable by Nuclio functions (pentest #28).
+  # Functions can name any SA; this blocks all except mlrun-job-runner.
+  restrict-nuclio-function-service-account:
+    enabled: true
+    type: validate
+    title: Restrict Nuclio Function ServiceAccount
+    category: Identity Security
+    severity: critical
+    validationFailureAction: Enforce
+    background: false
+    description: >-
+      Nuclio functions must run under the mlrun-job-runner ServiceAccount,
+      which MLRun assigns by default. Any other ServiceAccount - including an
+      unset one, which would fall back to default - is denied at admission,
+      preventing a function from inheriting a privileged identity.
+
+    annotations:
+      pod-policies.kyverno.io/autogen-controllers: none
+
+    rules:
+      # Reject on the NuclioFunction CR when one is created/updated.
+      - name: deny-privileged-sa-on-function-cr
+        match:
+          resources:
+            kinds:
+              - NuclioFunction
+            namespaces:
+              - aib-system
+        preconditions:
+          all:
+            - key: "{{ request.operation }}"
+              operator: AnyIn
+              value:
+                - CREATE
+                - UPDATE
+        message: >-
+          Nuclio functions must run under the mlrun-job-runner ServiceAccount.
+          No other ServiceAccount may be requested.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.serviceAccount || '' }}"
+                operator: AnyNotIn
+                value:
+                  - mlrun-job-runner
+
+      # Defence in depth: catches Nuclio function Pods directly.
+      - name: deny-privileged-sa-on-function-pod
+        match:
+          resources:
+            kinds:
+              - Pod
+            namespaces:
+              - aib-system
+            selector:
+                nuclio.io/class: function
+        preconditions:
+          all:
+            - key: "{{ request.operation }}"
+              operator: Equals
+              value: CREATE
+        message: >-
+          Nuclio function Pods must run under the mlrun-job-runner
+          ServiceAccount.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.serviceAccountName || '' }}"
+                operator: AnyNotIn
+                value:
+                  - mlrun-job-runner
+
+  # Phase 2 — Pod Security Baseline
+
+  # P2-01 — Disallow HostPath Volumes
+  # Blocks hostPath volumes; exception via label policy.security/allow-hostpath.
+  restrict-hostpath-volumes:
+    enabled: true
+    type: validate
+    title: Disallow HostPath Volumes
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Block HostPath volumes in all workload controllers. Exception
+      only via workload label policy.security/allow-hostpath true.
+    rules:
+      - name: deny-hostpath-labeled
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/allow-hostpath\" || '' }}"
+              operator: NotEquals
+              value: "true"
+        message: >-
+          HostPath volumes are not allowed. Add label
+          policy.security/allow-hostpath=true for approved exceptions.
+        pattern:
+          spec:
+            =(volumes):
+              - X(hostPath): "null"
+
+  # P2-02 — Disallow Privilege Escalation
+  # Enforces allowPrivilegeEscalation: false; exception via label.
+  restrict-privilege-escalation:
+    enabled: true
+    type: validate
+    title: Disallow Privilege Escalation
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Enforce allowPrivilegeEscalation false on all containers.
+      Exception only via label
+      policy.security/privileged-escalation-approved true.
+    rules:
+      - name: deny-priv-esc-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/privileged-escalation-approved\" || '' }}"
+              operator: NotEquals
+              value: "true"
+        message: >-
+          allowPrivilegeEscalation must be false.
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: false
+      - name: deny-priv-esc-init
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/privileged-escalation-approved\" || '' }}"
+              operator: NotEquals
+              value: "true"
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        message: >-
+          allowPrivilegeEscalation must be false on init containers.
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.allowPrivilegeEscalation }}"
+                    operator: NotEquals
+                    value: false
+
+  # P2-03 — Disallow Root User
+  # Enforces runAsNonRoot: true; exception via label policy.security/allow-root.
+  disallow-root-user:
+    enabled: true
+    type: validate
+    title: Disallow Root User
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Enforce runAsNonRoot true on all containers. Exception only via
+      label policy.security/allow-root true.
+    rules:
+      - name: deny-root-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/allow-root\" || '' }}"
+              operator: NotEquals
+              value: "true"
+        message: >-
+          Containers must run as non-root.
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  runAsNonRoot: true
+      - name: deny-root-init-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/allow-root\" || '' }}"
+              operator: NotEquals
+              value: "true"
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        message: >-
+          Init containers must run as non-root.
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.runAsNonRoot || `false` }}"
+                    operator: NotEquals
+                    value: true
+
+  # P2-04 — Disallow SELinux Custom Configuration
+  # Blocks custom seLinuxOptions at pod and container level.
+  disallow-selinux-custom:
+    enabled: true
+    type: validate
+    title: Disallow SELinux Custom Configuration
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Block custom SELinux options in securityContext at pod and
+      container level.
+    rules:
+      - name: deny-selinux-options
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Custom SELinux options are not allowed.
+        pattern:
+          spec:
+            =(securityContext):
+              X(seLinuxOptions): "null"
+            containers:
+              - =(securityContext):
+                  X(seLinuxOptions): "null"
+            =(initContainers):
+              - =(securityContext):
+                  X(seLinuxOptions): "null"
+            =(ephemeralContainers):
+              - =(securityContext):
+                  X(seLinuxOptions): "null"
+
+  # P2-05 — Enforce ReadOnly Root Filesystem
+  # Enforces readOnlyRootFilesystem: true; exception via label.
+  enforce-readonly-root-filesystem:
+    enabled: true
+    type: validate
+    title: Enforce ReadOnly Root Filesystem
+    category: Pod Security
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      Enforce readOnlyRootFilesystem true on all containers. Exception
+      only via label policy.security/writable-fs-required true.
+    rules:
+      - name: require-readonly-fs-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/writable-fs-required\" || '' }}"
+              operator: NotEquals
+              value: "true"
+        message: >-
+          readOnlyRootFilesystem must be true.
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+      - name: require-readonly-fs-init
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/writable-fs-required\" || '' }}"
+              operator: NotEquals
+              value: "true"
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        message: >-
+          Init containers must have readOnlyRootFilesystem true.
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.securityContext.readOnlyRootFilesystem || `false` }}"
+                    operator: NotEquals
+                    value: true
+
+  # P2-06 — Require Drop All Capabilities
+  # Containers must drop ALL Linux capabilities; add back only what's needed.
+  # KNOWN GAP (do not "fix" casually): the deny below reads
+  # securityContext.capabilities.drop[] unguarded. A container that omits
+  # capabilities.drop entirely evaluates to null and PASSES - only a container
+  # that sets drop to something other than ALL is caught. Verified with
+  # `kyverno apply`. Adding `|| `[]`` closes the hole but denies every workload
+  # that does not set the field, which today includes on-demand notebooks,
+  # Nuclio functions and MLRun jobs. Needs a mutate rollout first.
+  require-drop-all-capabilities:
+    enabled: true
+    type: validate
+    title: Require Drop All Capabilities
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Containers must drop ALL Linux capabilities. Add back only
+      specific capabilities that are required.
+    rules:
+      - name: require-drop-all
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Containers must drop ALL capabilities.
+          Add back only specific ones if needed.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            deny:
+              conditions:
+                all:
+                  - key: ALL
+                    operator: AnyNotIn
+                    value: "{{ element.securityContext.capabilities.drop[] }}"
+
+  # P2-07 — Disallow Privileged Containers
+  # Blocks privileged: true on all containers; no workload needs it.
+  disallow-privileged-containers:
+    enabled: true
+    type: validate
+    title: Disallow Privileged Containers
+    category: Pod Security
+    severity: critical
+    validationFailureAction: Enforce
+    description: >-
+      Privileged containers have unrestricted host access and must
+      not be used. No workload in this platform requires it.
+    rules:
+      - name: deny-privileged
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Privileged containers are not allowed.
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(privileged): false
+      - name: deny-privileged-init
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Privileged init containers are not allowed.
+        pattern:
+          spec:
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): false
+
+  # P2-08 — Require Resource Limits
+  # Every container must declare CPU and memory requests and limits.
+  require-resource-limits:
+    enabled: true
+    type: validate
+    title: Require Resource Limits
+    category: Resource Management
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Every container must declare CPU and memory requests and limits.
+      Namespace LimitRanges inject defaults, but this policy acts as
+      a safety net in case a LimitRange is removed or misconfigured.
+    rules:
+      - name: validate-resource-limits
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          CPU and memory requests and limits are required on all
+          containers.
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"
+                  requests:
+                    memory: "?*"
+                    cpu: "?*"
+      - name: validate-resource-limits-init
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        message: >-
+          CPU and memory requests and limits are required on all
+          init containers.
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.limits.memory || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.limits.cpu || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.requests.memory || '' }}"
+                    operator: Equals
+                    value: ""
+                  - key: "{{ element.resources.requests.cpu || '' }}"
+                    operator: Equals
+                    value: ""
+
+  # P2-09 — Enforce Maximum Resource Limits
+  # No container may exceed 8 CPU or 32Gi memory (cluster-wide safety net).
+  enforce-resource-ceilings:
+    enabled: true
+    type: validate
+    title: Enforce Maximum Resource Limits
+    category: Resource Management
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      No single container may exceed 8 CPU or 32Gi memory. These
+      ceilings match the highest per-namespace LimitRange max and
+      act as a cluster-wide safety net.
+    rules:
+      - name: memory-ceiling
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Container memory limit exceeds the cluster maximum of 32Gi.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.resources.limits || '' }}"
+                  operator: NotEquals
+                  value: ""
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.limits.memory || '0' }}"
+                    operator: GreaterThan
+                    value: "32Gi"
+      - name: cpu-ceiling
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Container CPU limit exceeds the cluster maximum of 8 cores.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.resources.limits || '' }}"
+                  operator: NotEquals
+                  value: ""
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.limits.cpu || '0' }}"
+                    operator: GreaterThan
+                    value: "8"
+
+  # P2-10 — Enforce Istio Sidecar Injection (Audit). Pods in injected namespaces
+  # may only opt out if they carry an explicit exemption-reason annotation.
+
+  enforce-istio-sidecar:
+    enabled: true
+    type: validate
+    title: Enforce Istio Sidecar Injection
+    category: Service Mesh
+    severity: medium
+    validationFailureAction: Audit
+    background: true
+    description: >-
+      Pods in Istio-injected namespaces must not opt out of sidecar
+      injection unless they carry an explicit
+      aib.vodacom.co.za/sidecar-exemption-reason annotation
+      documenting why.
+    rules:
+      - name: deny-undeclared-sidecar-optout
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-auth
+              - aib-system
+              - aib-data
+              - aib-serving
+              - aib-ops
+              - aib-governance
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.annotations.\"sidecar.istio.io/inject\" || '' }}"
+              operator: Equals
+              value: "false"
+        message: >-
+          Pod opted out of Istio sidecar injection but does not
+          declare an exemption reason. Add annotation:
+          aib.vodacom.co.za/sidecar-exemption-reason: "<justification>"
+        pattern:
+          metadata:
+            annotations:
+              aib.vodacom.co.za/sidecar-exemption-reason: "?*"
+
+  # Phase 3 — Pod Security Restricted
+
+  # P3-01 — Restrict Sysctls
+  # Only safe sysctls allowed per Kubernetes Pod Security Standards.
+  restrict-sysctls:
+    enabled: true
+    type: validate
+    title: Restrict Sysctls
+    category: Pod Security
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      Allow only safe sysctls as defined by the Kubernetes Pod
+      Security Standards.
+    rules:
+      - name: check-sysctls
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.securityContext.sysctls || `[]` | length(@) }}"
+              operator: GreaterThan
+              value: 0
+        message: >-
+          Only safe sysctls are allowed.
+        foreach:
+          - list: "request.object.spec.securityContext.sysctls"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.name }}"
+                    operator: AnyNotIn
+                    value:
+                      - kernel.shm_rmid_forced
+                      - net.ipv4.ip_local_port_range
+                      - net.ipv4.ip_unprivileged_port_start
+                      - net.ipv4.tcp_syncookies
+                      - net.ipv4.ping_group_range
+                      - net.ipv4.ip_local_reserved_ports
+                      - net.ipv4.tcp_keepalive_time
+                      - net.ipv4.tcp_fin_timeout
+                      - net.ipv4.tcp_keepalive_intvl
+                      - net.ipv4.tcp_keepalive_probes
+
+  # P3-02 — Restrict AppArmor Profiles
+  # Only RuntimeDefault and Localhost AppArmor profiles allowed.
+  restrict-apparmor-profiles:
+    enabled: true
+    type: validate
+    title: Restrict AppArmor Profiles
+    category: Pod Security
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      Allow only RuntimeDefault and Localhost AppArmor profiles.
+    rules:
+      - name: check-apparmor-profiles
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          AppArmor profile must be RuntimeDefault or Localhost.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.securityContext.appArmorProfile.type || '' }}"
+                  operator: NotEquals
+                  value: ""
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.securityContext.appArmorProfile.type }}"
+                    operator: AnyNotIn
+                    value:
+                      - RuntimeDefault
+                      - Localhost
+
+  # P3-03 — Drop NET_RAW Capability
+  # Disallows NET_RAW in capabilities.add on all containers.
+  # NOTE: functionally subsumed by P3-08 restrict-linux-capabilities, which
+  # already denies anything outside [NET_BIND_SERVICE, CHOWN]. Kept as its own
+  # policy so aibplus-profile-notebooks can except it independently. Do not
+  # delete without first removing that PolicyException reference.
+  drop-net-raw-capability:
+    enabled: true
+    type: validate
+    title: Drop NET_RAW Capability
+    category: Pod Security
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      Disallow the NET_RAW capability on all containers.
+    rules:
+      - name: deny-net-raw
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          NET_RAW capability is not allowed.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+                - key: "{{ element.securityContext.capabilities.add || `[]` | length(@) }}"
+                  operator: GreaterThan
+                  value: 0
+            deny:
+              conditions:
+                all:
+                  - key: NET_RAW
+                    operator: AnyIn
+                    value: "{{ element.securityContext.capabilities.add[] }}"
+
+  # P3-04 — Disallow hostPort
+  # hostPort must be unset or 0; exception via label.
+  disallow-hostport:
+    enabled: true
+    type: validate
+    title: Disallow hostPort
+    category: Pod Security
+    severity: medium
+    validationFailureAction: Enforce
+    description: >-
+      hostPort must be unset or 0 on all containers.
+    rules:
+      - name: deny-hostport
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/allow-hostport\" || '' }}"
+              operator: NotEquals
+              value: "true"
+        message: >-
+          hostPort is not allowed.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.ports[?hostPort > `0`] || `[]` | length(@) }}"
+                    operator: GreaterThan
+                    value: 0
+
+  # P3-05 — Disallow Host Namespaces
+  # Blocks hostNetwork, hostPID, and hostIPC cluster-wide.
+  restrict-host-namespaces:
+    enabled: true
+    type: validate
+    title: Disallow Host Namespaces
+    category: Pod Security
+    severity: critical
+    validationFailureAction: Enforce
+    description: >-
+      Block hostNetwork, hostPID, and hostIPC on all pods cluster-wide.
+    rules:
+      - name: deny-host-ns
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"policy.security/level\" || '' }}"
+              operator: NotEquals
+              value: "trusted-system"
+        message: >-
+          Host namespaces (hostNetwork, hostPID, hostIPC) are not allowed.
+        pattern:
+          spec:
+            =(hostNetwork): false
+            =(hostPID): false
+            =(hostIPC): false
+
+  # P3-06 — Disallow procMount Modification
+  # procMount must be Default or unset on all containers.
+  disallow-procmount-modification:
+    enabled: true
+    type: validate
+    title: Disallow procMount Modification
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      procMount must be Default or unset on all containers.
+    rules:
+      - name: deny-procmount-undefault
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          procMount must be Default or unset.
+        pattern:
+          spec:
+            containers:
+              - =(securityContext):
+                  =(procMount): Default
+            =(initContainers):
+              - =(securityContext):
+                  =(procMount): Default
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(procMount): Default
+
+  # P3-07 — Disallow HostProcess Containers
+  # Windows hostProcess must be false or unset on all pods/containers.
+  disallow-hostprocess-containers:
+    enabled: true
+    type: validate
+    title: Disallow HostProcess Containers
+    category: Pod Security
+    severity: critical
+    validationFailureAction: Enforce
+    description: >-
+      Windows hostProcess must be false or unset on all pods and
+      containers.
+    rules:
+      - name: deny-hostprocess
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          HostProcess containers are not allowed.
+        pattern:
+          spec:
+            =(securityContext):
+              =(windowsOptions):
+                =(hostProcess): false
+            containers:
+              - =(securityContext):
+                  =(windowsOptions):
+                    =(hostProcess): false
+            =(initContainers):
+              - =(securityContext):
+                  =(windowsOptions):
+                    =(hostProcess): false
+            =(ephemeralContainers):
+              - =(securityContext):
+                  =(windowsOptions):
+                    =(hostProcess): false
+
+  # P3-08 — Restrict Linux Capabilities
+  # Only NET_BIND_SERVICE and CHOWN may be added; all others blocked.
+  restrict-linux-capabilities:
+    enabled: true
+    type: validate
+    title: Restrict Linux Capabilities
+    category: Pod Security
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      Only NET_BIND_SERVICE and CHOWN capabilities may be added.
+      All other capabilities are blocked.
+    rules:
+      - name: restrict-added-capabilities
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        message: >-
+          Only NET_BIND_SERVICE and CHOWN capabilities may be added.
+        foreach:
+          - list: "request.object.spec.[initContainers, ephemeralContainers, containers][]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+                - key: "{{ element.securityContext.capabilities.add || `[]` | length(@) }}"
+                  operator: GreaterThan
+                  value: 0
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.securityContext.capabilities.add[] }}"
+                    operator: AnyNotIn
+                    value:
+                      - NET_BIND_SERVICE
+                      - CHOWN
+
+  # Platform — Mutate Policies
+
+
+  # PLT-01 — Add Default Security Context (Mutate)
+  # Auto-injects baseline securityContext into containers missing it.
+  add-default-security-context:
+    enabled: true
+    type: mutate
+    title: Add Default Security Context
+    category: Pod Security
+    severity: medium
+    description: >-
+      Auto-injects baseline security context fields into containers
+      that omit them. Only fills in missing fields — never overrides
+      values already set by the chart.
+    rules:
+      - name: add-security-context-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        # NOTE: these four namespaces are also in the match list above, so this
+        # mutation does not run there - that is why they need PolicyExceptions
+        # for disallow-root-user / enforce-readonly-root-filesystem / etc.
+        # Removing them would inject securityContext into running platform
+        # workloads, so leave as-is unless that is a deliberate change.
+        exclude:
+          - namespaces:
+              - istio-system
+              - kyverno
+              - aib-system
+              - aibplus-profile
+        foreach:
+          - list: "request.object.spec.containers[]"
+            patchStrategicMerge:
+              spec:
+                containers:
+                  - (name): "{{ element.name }}"
+                    securityContext:
+                      +(runAsNonRoot): true
+                      +(allowPrivilegeEscalation): false
+                      +(readOnlyRootFilesystem): true
+                      +(capabilities):
+                        +(drop):
+                          - ALL
+      - name: add-security-context-init-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        # NOTE: these four namespaces are also in the match list above, so this
+        # mutation does not run there - that is why they need PolicyExceptions
+        # for disallow-root-user / enforce-readonly-root-filesystem / etc.
+        # Removing them would inject securityContext into running platform
+        # workloads, so leave as-is unless that is a deliberate change.
+        exclude:
+          - namespaces:
+              - istio-system
+              - kyverno
+              - aib-system
+              - aibplus-profile
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.name }}"
+                  operator: AnyNotIn
+                  value: ["istio-init", "istio-proxy"]
+            patchStrategicMerge:
+              spec:
+                initContainers:
+                  - (name): "{{ element.name }}"
+                    securityContext:
+                      +(runAsNonRoot): true
+                      +(allowPrivilegeEscalation): false
+                      +(readOnlyRootFilesystem): true
+                      +(capabilities):
+                        +(drop):
+                          - ALL
+
+  # PLT-02 — Default Image Pull Policy (Mutate)
+  # Sets imagePullPolicy: Always on tag-based images that omit it.
+  default-image-pull-policy:
+    enabled: true
+    type: mutate
+    title: Default Image Pull Policy to Always
+    category: Supply Chain Security
+    severity: low
+    description: >-
+      Sets imagePullPolicy to Always on containers that omit it and
+      do not use a digest-pinned image. Does not override pull
+      policies already set by the chart.
+    rules:
+      - name: set-pull-always-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        foreach:
+          - list: "request.object.spec.containers[]"
+            preconditions:
+              all:
+                - key: "{{ element.image }}"
+                  operator: NotEquals
+                  value: "*@sha256:*"
+            patchStrategicMerge:
+              spec:
+                containers:
+                  - (name): "{{ element.name }}"
+                    +(imagePullPolicy): Always
+      - name: set-pull-always-init-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - argocd
+              - spark-operator
+              - aib-governance
+              - argocd-agent
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            preconditions:
+              all:
+                - key: "{{ element.image }}"
+                  operator: NotEquals
+                  value: "*@sha256:*"
+            patchStrategicMerge:
+              spec:
+                initContainers:
+                  - (name): "{{ element.name }}"
+                    +(imagePullPolicy): Always
+
+  # PLT-03 — Default Resource Limits for Nuclio Functions (Mutate).
+  # Nuclio omits resources entirely; this fills in missing fields only.
+
+  nuclio-function-default-resources:
+    enabled: true
+    type: mutate
+    title: Default Resource Limits for Nuclio Functions
+    category: Resource Management
+    severity: medium
+    background: false
+    description: >-
+      Injects default CPU/memory requests and limits into Nuclio
+      function containers that omit them. Prevents unbounded
+      resource consumption on compute nodes.
+    rules:
+      - name: add-default-resources-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+            selector:
+              nuclio.io/class: function
+        foreach:
+          - list: "request.object.spec.containers[]"
+            patchStrategicMerge:
+              spec:
+                containers:
+                  - (name): "{{ element.name }}"
+                    resources:
+                      +(requests):
+                        +(cpu): "100m"
+                        +(memory): "256Mi"
+                        +(ephemeral-storage): "2Gi"
+                      +(limits):
+                        +(cpu): "2"
+                        +(memory): "4Gi"
+                        +(ephemeral-storage): "20Gi"
+
+  # PLT-05 — Kaniko Build Job Resources (Mutate). Jobs ship no resources and were OOMKilled
+  # at the 4Gi LimitRange default; patches the Job, not the Pod, to beat LimitRanger.
+
+  nuclio-kaniko-build-resources:
+    enabled: true
+    type: mutate
+    title: Kaniko Build Job Resources
+    category: Resource Management
+    severity: medium
+    background: false
+    description: >-
+      Sets CPU/memory/ephemeral-storage requests and limits on kaniko
+      build workloads (Nuclio dashboard jobs and MLRun image builds),
+      which are created without a resources block and would otherwise
+      inherit the namespace LimitRange default and be OOMKilled.
+    rules:
+      - name: set-kaniko-build-resources
+        match:
+          - kinds:
+              - Job
+            namespaces:
+              - aib-system
+            names:
+              - "nuclio-kanikojob*"
+        patchStrategicMerge:
+          spec:
+            template:
+              spec:
+                containers:
+                  - (name): "kaniko-executor"
+                    resources:
+                      requests:
+                        cpu: "1"
+                        memory: "4Gi"
+                        ephemeral-storage: "8Gi"
+                      limits:
+                        cpu: "6"
+                        memory: "16Gi"
+                        ephemeral-storage: "60Gi"
+
+
+      # Rule 2 — Job-level catch-all for builds rule 1 misses (mlrun-build-*, renamed
+      # jobs). Matches by image, so the container name does not have to be known.
+      - name: set-kaniko-build-resources-job-fallback
+        match:
+          - kinds:
+              - Job
+            namespaces:
+              - aib-system
+        foreach:
+          - list: "request.object.spec.template.spec.containers[]"
+            preconditions:
+              all:
+                - key: "{{ contains(element.image, 'kaniko') }}"
+                  operator: Equals
+                  value: true
+                - key: "{{ element.resources.limits.memory || '0' }}"
+                  operator: LessThanOrEquals
+                  value: "4Gi"
+            patchStrategicMerge:
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - (name): "{{ element.name }}"
+                        resources:
+                          requests:
+                            cpu: "1"
+                            memory: "4Gi"
+                            ephemeral-storage: "8Gi"
+                          limits:
+                            cpu: "6"
+                            memory: "16Gi"
+                            ephemeral-storage: "60Gi"
+      # Rule 3 — Pod-level last resort, aib-system only. The <=4Gi precondition keeps this
+      # to pods still on the LimitRange default. Check a namespace's max before adding it.
+
+      - name: set-kaniko-build-resources-fallback
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+        foreach:
+          - list: "request.object.spec.containers[]"
+            preconditions:
+              all:
+                - key: "{{ contains(element.image, 'kaniko') }}"
+                  operator: Equals
+                  value: true
+                - key: "{{ element.resources.limits.memory || '0' }}"
+                  operator: LessThanOrEquals
+                  value: "4Gi"
+            patchStrategicMerge:
+              spec:
+                containers:
+                  - (name): "{{ element.name }}"
+                    resources:
+                      requests:
+                        cpu: "1"
+                        memory: "4Gi"
+                        ephemeral-storage: "8Gi"
+                      limits:
+                        cpu: "6"
+                        memory: "16Gi"
+                        ephemeral-storage: "60Gi"
+
+  # Scheduling — Node Pool Routing & Resource Guardrails
+
+  # SCH-01 (5.1) — Node Pool Routing (Mutate) by namespace and labels.
+  # PREREQUISITE: label nodes aib.vodacom.co.za/node-pool=platform|compute|gpu first.
+  # KNOWN GAPS (changing these moves where running workloads schedule, so they
+  # are deliberately left alone here):
+  #  - gpu-workloads-to-gpu-pool does not match aibplus-profile, so a GPU
+  #    notebook there gets no nodeSelector and no nvidia.com/gpu toleration.
+  #  - platform-components-to-platform-pool has no GPU precondition, so an
+  #    ArgoCD-managed GPU pod in aib-system matches it and the GPU rule both;
+  #    the later rule wins by ordering rather than by intent.
+  #  - infrastructure-to-platform-pool omits argocd (argocd-agent is present),
+  #    so argocd pods are routed by neither rule.
+
+  ###  kubectl get nodes -l aib.vodacom.co.za/node-pool=platform
+
+  aib-node-pool-routing:
+    enabled: true
+    type: mutate
+    title: AIB+ Node Pool Routing
+    category: Scheduling
+    severity: medium
+    background: false
+    description: >-
+      Routes AIB+ workloads to the correct node pool based on namespace
+      and workload identity. Injects nodeSelector at admission time.
+    rules:
+      - name: user-workloads-to-compute-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aibplus-profile
+        exclude:
+          - selector:
+              app.kubernetes.io/managed-by: argocd
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.containers[?resources.requests.\"nvidia.com/gpu\"] | length(@) }}"
+              operator: Equals
+              value: 0
+        patchStrategicMerge:
+          spec:
+            nodeSelector:
+              aib.vodacom.co.za/node-pool: compute
+            tolerations:
+              - key: aib.vodacom.co.za/compute-only
+                operator: Exists
+                effect: NoSchedule
+      - name: platform-components-to-platform-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+        preconditions:
+          all:
+            - key: "{{ request.object.metadata.labels.\"app.kubernetes.io/managed-by\" || '' }}"
+              operator: Equals
+              value: argocd
+        patchStrategicMerge:
+          spec:
+            nodeSelector:
+              aib.vodacom.co.za/node-pool: platform
+      - name: data-services-to-platform-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-data
+        patchStrategicMerge:
+          spec:
+            nodeSelector:
+              aib.vodacom.co.za/node-pool: platform
+      - name: serving-to-compute-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-serving
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.containers[?resources.requests.\"nvidia.com/gpu\"] | length(@) }}"
+              operator: Equals
+              value: 0
+        patchStrategicMerge:
+          spec:
+            nodeSelector:
+              aib.vodacom.co.za/node-pool: compute
+            tolerations:
+              - key: aib.vodacom.co.za/compute-only
+                operator: Exists
+                effect: NoSchedule
+      - name: infrastructure-to-platform-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-auth
+              - aib-ops
+              - aib-governance
+              - istio-system
+              - cert-manager
+              - external-secrets
+              - kyverno
+              - spark-operator
+              - argocd-agent
+        preconditions:
+          all:
+            # `|| `[]`` is required: a resource with no ownerReferences (any
+            # bare Pod, and every Deployment) makes this JMESPath throw
+            # "Invalid type for: <nil>", which aborts the ENTIRE mutation
+            # webhook - silently skipping every later mutate policy, including
+            # aib-add-default-ephemeral-storage. The validate policy then
+            # rejects the workload for a field nothing was left to inject.
+            - key: "{{ request.object.metadata.ownerReferences || `[]` | [?kind=='DaemonSet'] | length(@) }}"
+              operator: Equals
+              value: 0
+        patchStrategicMerge:
+          spec:
+            nodeSelector:
+              aib.vodacom.co.za/node-pool: platform
+      - name: gpu-workloads-to-gpu-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-serving
+              - aib-system
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.containers[?resources.requests.\"nvidia.com/gpu\"] | length(@) }}"
+              operator: GreaterThan
+              value: 0
+        patchStrategicMerge:
+          spec:
+            nodeSelector:
+              aib.vodacom.co.za/node-pool: gpu
+            tolerations:
+              - key: nvidia.com/gpu
+                operator: Exists
+                effect: NoSchedule
+
+  # SCH-02 (5.2) — Prevent Platform Pool Abuse (Validate): blocks a user nodeSelector
+  # onto the platform pool. Requires SCH-01 enabled and nodes labeled.
+
+  aib-prevent-platform-pool-abuse:
+    enabled: true
+    type: validate
+    title: Prevent User Workload Access to Platform Pool
+    category: Scheduling Security
+    severity: high
+    validationFailureAction: Enforce
+    background: false
+    description: >-
+      Prevents data scientists from using nodeSelector to schedule user
+      workloads onto the platform node pool.
+    rules:
+      - name: block-user-workloads-on-platform-pool
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-serving
+        exclude:
+          - selector:
+              app.kubernetes.io/managed-by: argocd
+        message: >-
+          User workloads cannot target the platform node pool.
+          Remove the nodeSelector or target the compute pool instead.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.nodeSelector.\"aib.vodacom.co.za/node-pool\" || '' }}"
+                operator: Equals
+                value: platform
+
+  # PLT-04 — Default Ephemeral Storage (Mutate). Nuclio pods excluded; PLT-03 covers them.
+  # 1Gi never survived a pip install; the 20Gi limit is the real headroom, request stays small.
+
+  aib-add-default-ephemeral-storage:
+    enabled: true
+    type: mutate
+    title: Add Default Ephemeral Storage
+    category: Resource Management
+    severity: medium
+    background: true
+    description: >-
+      Auto-injects an ephemeral-storage request of 2Gi and a limit of
+      20Gi into containers that omit them. Only fills in missing values
+      — never overrides values already set by the chart.
+    rules:
+      - name: add-ephemeral-storage-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+        exclude:
+          - selector:
+              nuclio.io/class: function
+        foreach:
+          - list: "request.object.spec.containers[]"
+            patchStrategicMerge:
+              spec:
+                containers:
+                  - (name): "{{ element.name }}"
+                    resources:
+                      +(requests):
+                        +(ephemeral-storage): "2Gi"
+                      +(limits):
+                        +(ephemeral-storage): "20Gi"
+      - name: add-ephemeral-storage-init-containers
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-auth
+              - aib-ops
+              - aib-serving
+              - aibplus-profile
+        exclude:
+          - selector:
+              nuclio.io/class: function
+        preconditions:
+          all:
+            - key: "{{ request.object.spec.initContainers || `[]` | length(@) }}"
+              operator: GreaterThanOrEquals
+              value: 1
+        foreach:
+          - list: "request.object.spec.initContainers[]"
+            patchStrategicMerge:
+              spec:
+                initContainers:
+                  - (name): "{{ element.name }}"
+                    resources:
+                      +(requests):
+                        +(ephemeral-storage): "2Gi"
+                      +(limits):
+                        +(ephemeral-storage): "20Gi"
+
+
+  # SCH-03 (5.3) — Require Ephemeral Storage Requests (Validate) in AIB+ namespaces.
+  # CPU/memory requests and limits are already enforced cluster-wide by P2-08.
+  # NOTE: checks spec.containers only. PLT-04 injects the field into init
+  # containers too, but nothing validates them - widening this would start
+  # rejecting init containers that pass today.
+
+  aib-require-ephemeral-storage:
+    enabled: false
+    type: validate
+    title: Require Ephemeral Storage Requests
+    category: Resource Management
+    severity: high
+    validationFailureAction: Enforce
+    description: >-
+      All containers in AIB+ namespaces must declare ephemeral-storage
+      requests. CPU and memory are enforced cluster-wide by P2-08.
+    rules:
+      - name: require-ephemeral-storage-requests
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-data
+              - aib-serving
+        message: >-
+          All containers must declare ephemeral-storage requests.
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    ephemeral-storage: "?*"
+
+  # SCH-04 (6.2a) — Job Resource Ceilings (Validate): caps REQUESTS at 8 CPU / 32Gi.
+  # P2-09 caps LIMITS at the same values; both are needed, the fields are independent.
+
+  aib-job-resource-ceilings:
+    enabled: true
+    type: validate
+    title: User Job Resource Ceilings
+    category: Cost Bounding
+    severity: medium
+    validationFailureAction: Enforce
+    background: false
+    description: >-
+      Caps per-container resource requests for user workloads at
+      8 CPU and 32Gi memory to prevent runaway cost.
+    rules:
+      - name: limit-user-container-requests
+        match:
+          - kinds:
+              - Pod
+            namespaces:
+              - aib-system
+              - aib-serving
+        exclude:
+          - selector:
+              app.kubernetes.io/managed-by: argocd
+        message: >-
+          User workload containers may not request more than 8 CPU or
+          32Gi memory. Contact the platform team for exceptions.
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.resources.requests.cpu || '0' }}"
+                    operator: GreaterThan
+                    value: "8"
+                  - key: "{{ element.resources.requests.memory || '0' }}"
+                    operator: GreaterThan
+                    value: "32Gi"
+

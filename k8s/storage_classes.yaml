@@ -1,0 +1,103 @@
+# =========================================================
+# AIB Platform Storage Classes - GCP
+# =========================================================
+
+# =========================================================
+# 1. Standard Block Storage
+# Backend: GCE Persistent Disk Balanced
+# Access Mode: RWO
+# Use Case: General workloads
+# =========================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aib-block-standard
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    aib.platform/type: block
+    aib.platform/tier: standard
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-balanced
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# =========================================================
+# 2. High Performance Block Storage
+# Backend: GCE Persistent Disk SSD
+# Access Mode: RWO
+# Use Case: Databases / ML / Elasticsearch
+# =========================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aib-block-performance
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    aib.platform/type: block
+    aib.platform/tier: performance
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-ssd
+  csi.storage.k8s.io/fstype: ext4
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# =========================================================
+# 3. Shared Filesystem Storage
+# Backend: Google Filestore
+# Access Mode: RWX
+# Use Case: Shared notebooks / shared models
+# Requires: Filestore CSI Driver
+# =========================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aib-shared-filesystem
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    aib.platform/type: filesystem
+    aib.platform/tier: shared
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: STANDARD
+  network: default
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+
+---
+# =========================================================
+# 4. Bulk Object Storage
+# Backend: Google Cloud Storage (GCS) Fuse CSI
+# Access Mode: RWX-like
+# Use Case: Datasets / artifacts / backups
+# Requires: GCS Fuse CSI Driver
+# =========================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aib-block-bulk
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    aib.platform/type: object-storage
+    aib.platform/tier: bulk
+provisioner: gcsfuse.csi.storage.gke.io
+parameters:
+  bucketName: aib-platform-bulk-storage
+reclaimPolicy: Delete #Retain
+volumeBindingMode: Immediate
+allowVolumeExpansion: false

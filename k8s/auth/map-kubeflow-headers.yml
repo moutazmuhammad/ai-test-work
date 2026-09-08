@@ -1,0 +1,46 @@
+###########
+# Kubeflow
+###########
+
+# Headers
+  apiVersion: networking.istio.io/v1alpha3
+  kind: EnvoyFilter
+  metadata:
+    name: inject-kubeflow-headers
+    namespace: kubeflow
+  spec:
+    # workloadSelector:
+    #   labels:
+    #     app: kubeflow
+    configPatches:
+      - applyTo: HTTP_FILTER
+        match:
+          context: SIDECAR_INBOUND
+          listener:
+            filterChain:
+              filter:
+                name: "envoy.filters.network.http_connection_manager"
+                subFilter:
+                  name: "envoy.filters.http.router"
+        patch:
+          operation: INSERT_BEFORE
+          value:
+            name: envoy.lua
+            typed_config:
+              "@type": "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua"
+              inlineCode: |
+                function envoy_on_request(request_handle)
+                  -- 1. Inject UserID from the incoming email header
+                  local email = request_handle:headers():get("x-auth-request-email")
+                  if email then
+                    request_handle:headers():add("kubeflow-userid", email)
+                  end
+
+                  -- 2. Inject Groups from the incoming groups header
+                  local groups = request_handle:headers():get("x-auth-request-groups")
+                  if groups then
+                    -- Cleans JSON array chars if present, e.g., ["groupA"] -> groupA
+                    local clean_groups = groups:gsub("[%[%]%\"]", "")
+                    request_handle:headers():add("kubeflow-groups", clean_groups)
+                  end
+                end

@@ -1,0 +1,2 @@
+extraEnvVars:
+  MLFLOW_SERVER_ALLOWED_HOSTS: mlflow.${BASE_DOMAIN}

@@ -1,0 +1,45 @@
+replicaCount: 1
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+autoscaleEnabled: false
+pdb:
+  minAvailable: 1
+
+meshConfig:
+  outboundTrafficPolicy:
+    mode: REGISTRY_ONLY
+  extensionProviders:
+  - name: oauth2-proxy
+    envoyExtAuthzHttp:
+      service: oauth2-proxy.aib-auth.svc.cluster.local
+      port: 80
+      pathPrefix: /oauth2/auth
+      includeHeadersInCheck:
+        - "cookie"
+        - "authorization"
+        - "x-forwarded-proto"
+        - "x-forwarded-host"
+        - "x-forwarded-uri" # Passes the original path
+        # This dynamic header captures the original URL
+      includeAdditionalHeadersInCheck:
+        X-Auth-Request-Redirect: "https://%REQ(:authority)%%REQ(:path)%"
+      headersToUpstreamOnAllow:
+        - "path"
+        - "authorization"
+        - x-auth-request-user
+        - x-auth-request-email
+        - x-auth-request-groups
+        - kubeflow-userid
+        - kubeflow-groups
+      headersToDownstreamOnDeny:
+        - content-type
+        - set-cookie
+        - location
+global:
+  proxy:
+    logLevel: debug

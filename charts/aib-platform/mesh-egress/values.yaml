@@ -1,0 +1,47 @@
+meshEgress:
+  namespace: aib-auth
+
+  gateway:
+    enabled: false
+    name: platform-egress-gateway
+    serviceNamespace: istio-system
+    selector:
+      istio: egressgateway
+
+  services: []
+
+    # - name: gar-europe-west1
+    #   enabled: true
+    #   namespace: aib-system
+    #   host: europe-west1-docker.pkg.dev
+    #   port: 443
+    #   resolution: DNS
+    #   tls:
+    #     mode: PASSTHROUGH
+
+    # - name: gcs
+    #   enabled: true
+    #   namespace: aib-system
+    #   host: storage.googleapis.com
+    #   port: 443
+    #   resolution: DNS
+    #   tls:
+    #     mode: PASSTHROUGH
+
+    # - name: mlrun-marketplace
+    #   enabled: true
+    #   namespace: aib-system
+    #   host: mlrun.github.io
+    #   port: 443
+    #   resolution: DNS
+    #   tls:
+    #     mode: PASSTHROUGH
+
+    # - name: nuget-api
+    #   enabled: true
+    #   namespace: aib-system
+    #   host: api.nuget.org
+    #   port: 443
+    #   resolution: DNS
+    #   tls:
+    #     mode: PASSTHROUGH

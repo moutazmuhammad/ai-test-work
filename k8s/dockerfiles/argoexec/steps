@@ -1,0 +1,14 @@
+#### 1- upgrade Golang
+
+git clone https://github.com/udhos/update-golang
+cd update-golang
+sudo ./update-golang.sh
+
+source /etc/profile.d/golang_path.sh
+
+#### 2- build a clean version of argoexec image
+
+git clone https://github.com/argoproj/argo-workflows
+cd argo-workflows
+git checkout renovate/main-golang-1.x
+docker build -t europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/argoexec:v4.1.1-go-1.26.6-fixed .

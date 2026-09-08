@@ -1,0 +1,6 @@
+apiVersion: v2
+name: central-secret-operator
+description: A Helm chart for creating Kubernetes secrets using External Secrets Operator
+type: application
+version: 0.6.0
+appVersion: "0.6.0"

@@ -1,0 +1,74 @@
+## AI Platform - Umbrella values
+## Override subchart values by prefixing with the subchart name.
+
+mesh-security:
+  meshSecurity:
+    mtls:
+      enabled: true
+      mode: STRICT
+      namespaces: []
+
+    authorizationPolicies: []
+    #   - name: model-api
+    #     namespace: my-namespace
+    #     action: ALLOW
+    #     selector:
+    #       app: model-api
+    #     rules:
+    #       - from:
+    #           - namespaces:
+    #               - my-namespace
+
+    requestAuthentication: []
+    #   - name: jwt-auth
+    #     namespace: my-namespace
+    #     selector:
+    #       app: model-api
+    #     jwtRules:
+    #       - issuer: "https://auth.aib.vodafone.com"
+    #         jwksUri: "https://auth.aib.vodafone.com/.well-known/jwks.json"
+
+    rateLimiting: []
+    #   - name: ai-ns-ratelimit
+    #     namespace: ai-namespace
+    #     maxTokens: 100
+    #     tokensPerFill: 50
+    #     fillInterval: "60s"
+
+mesh-networking:
+  meshNetworking:
+    namespace: istio-system
+    domain: "aib.vodafone.com"
+
+    gateway:
+      enabled: true
+      name: platform-gateway
+      selector:
+        istio: ingressgateway
+      port:
+        number: 80
+        name: http
+        protocol: HTTP
+
+    services: []
+    #   - name: model-api
+    #     subdomain: model-api    # optional, defaults to .name
+    #     serviceNamespace: my-namespace  # namespace where the K8s Service runs
+    #     port: 8080
+    #     pathPrefix: /predict
+    #     retries:
+    #       attempts: 3
+    #       perTryTimeout: 2s
+
+mesh-egress:
+  meshEgress:
+    namespace: aib-auth
+
+    gateway:
+      enabled: false
+      name: platform-egress-gateway
+      serviceNamespace: istio-system
+      selector:
+        istio: egressgateway
+
+    services: []

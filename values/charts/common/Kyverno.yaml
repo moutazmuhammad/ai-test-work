@@ -1,0 +1,307 @@
+# =============================================================================
+# Kyverno — Production values for AIB Plus
+#
+# Chart version : 3.8.1
+# App version   : v1.18.1
+# Namespace     : kyverno (istio-injection: disabled)
+# Quota         : 2 CPU requests / 4Gi memory requests / 10 pods
+# LimitRange    : max 2 CPU / 2Gi per container
+# =============================================================================
+
+# Images — all pulled from private Artifact Registry mirror
+global:
+  image:
+    registry: europe-west1-docker.pkg.dev
+
+# CRDs
+crds:
+  install: true
+  migration:
+    enabled: true
+    image:
+      registry: europe-west1-docker.pkg.dev
+      repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno-cli
+      pullPolicy: IfNotPresent
+
+# Feature Flags
+features:
+  admissionReports:
+    enabled: true
+  aggregateReports:
+    enabled: true
+  policyReports:
+    enabled: true
+  autoUpdateWebhooks:
+    enabled: true
+  backgroundScan:
+    enabled: true
+    workers: 2
+    interval: 1h
+    skipResourceFilters: true
+  configMapCaching:
+    enabled: true
+  deferredLoading:
+    enabled: true
+  dumpPayload:
+    enabled: false
+  forceFailurePolicyIgnore:
+    enabled: true
+  generateValidatingAdmissionPolicy:
+    enabled: true
+  logging:
+    format: text
+    verbosity: 2
+  omitEvents:
+    eventTypes:
+      - PolicyApplied
+      - PolicySkipped
+  policyExceptions:
+    enabled: true
+    namespace: kyverno
+  protectManagedResources:
+    enabled: false
+  registryClient:
+    allowInsecure: false
+    credentialHelpers:
+      - default
+      - google
+
+# Config
+config:
+  create: true
+  preserve: true
+
+  # Rewrite unqualified images (e.g. "nginx") to the private registry.
+  enableDefaultRegistryMutation: true
+  defaultRegistry: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images
+
+  webhooks:
+    excludeKyvernoNamespace: true
+    timeoutSeconds: 30
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - kube-system
+
+  # Exclude system resources and Kyverno's own resources from processing.
+  resourceFiltersExcludeNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+
+# Metrics
+metricsConfig:
+  create: true
+
+# Admission Controller
+admissionController:
+  replicas: 3
+
+  container:
+    image:
+      repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno
+      pullPolicy: IfNotPresent
+
+  initContainer:
+    image:
+      repository: vf-grp-aib-dev-mirror/aib-plus-images/kyvernopre
+      pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+  initResources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 2
+
+  antiAffinity:
+    enabled: true
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: admission-controller
+
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  # strategy:
+  #   type: RollingUpdate
+  #   rollingUpdate:
+  #     maxSurge: 1
+  #     maxUnavailable: 1
+
+  serviceMonitor:
+    enabled: false
+
+  metering:
+    disabled: false
+    config: prometheus
+    port: 8000
+
+# Background Controller
+backgroundController:
+  replicas: 1 #2
+
+  image:
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno-background-controller
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 1
+
+  antiAffinity:
+    enabled: true
+
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  serviceMonitor:
+    enabled: false
+
+  metering:
+    disabled: false
+    config: prometheus
+    port: 8000
+
+# Cleanup Controller
+cleanupController:
+  replicas: 1 #2
+
+  image:
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno-cleanup-controller
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 1
+
+  antiAffinity:
+    enabled: true
+
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  serviceMonitor:
+    enabled: false
+
+  metering:
+    disabled: false
+    config: prometheus
+    port: 8000
+
+# Reports Controller
+reportsController:
+  replicas: 1 #2
+
+  image:
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno-reports-controller
+    pullPolicy: IfNotPresent
+
+  rbac:
+    coreClusterRole:
+      extraResources:
+        - apiGroups:
+            - ""
+          resources:
+            - secrets
+          verbs:
+            - get
+            - list
+            - watch
+        # Needed for restrict-nuclio-function-service-account to appear in
+        # policy reports; without it the controller logs a permissions warning.
+        # Admission enforcement works either way.
+        - apiGroups:
+            - nuclio.io
+          resources:
+            - nucliofunctions
+          verbs:
+            - get
+            - list
+            - watch
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 1
+
+  antiAffinity:
+    enabled: true
+
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  serviceMonitor:
+    enabled: false
+
+  metering:
+    disabled: false
+    config: prometheus
+    port: 8000
+
+# Helm Test & Webhook Cleanup — override public ghcr.io images
+test:
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno-readiness-checker
+    tag: v1.18.1
+    pullPolicy: IfNotPresent
+
+webhooksCleanup:
+  enabled: true
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/kyverno-readiness-checker
+    tag: v1.18.1
+    pullPolicy: IfNotPresent
+
+# Reports Server (optional — stores reports in a dedicated backend)
+reportsServer:
+  enabled: false
+
+# Grafana (optional — dashboards)
+grafana:
+  enabled: false

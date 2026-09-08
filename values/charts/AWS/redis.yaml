@@ -1,0 +1,37 @@
+# =============================================================================
+# Redis — AWS overrides
+#
+# Only GCP-specific values are overridden here:
+#   - Image registry/repos: Artifact Registry → ECR
+# =============================================================================
+
+image:
+  registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+  repository: aibplus-images/bitnami-redis
+
+volumePermissions:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-os-shell
+
+kubectl:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-kubectl
+
+sentinel:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/redis-sentinel
+    tag: v1
+
+sysctl:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/bitnami-os-shell
+
+metrics:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/redis-exporter
+    tag: v1

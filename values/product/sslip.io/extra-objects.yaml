@@ -1,0 +1,181 @@
+###########
+# Dex
+###########
+
+# CSS styling
+extraObjects:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: dex-aibplus-theme
+      namespace: aib-auth
+    data:
+      styles.css: |
+        :root {
+          --voda-red: #E60000;
+          --voda-dark: #333333;
+          --voda-grey: #f4f4f4;
+        }
+
+        body {
+          background-color: var(--voda-grey) !important;
+          font-family: "Vodafone LT", "Source Sans Pro", Helvetica, Arial, sans-serif !important;
+          color: var(--voda-dark);
+        }
+
+        .dex-container {
+          border-radius: 0px !important;
+          border: none !important;
+          box-shadow: 0 4px 10px rgba(0,0,0,0.1) !important;
+          border-top: 6px solid var(--voda-red) !important;
+          padding: 10px !important;
+          max-width: 500px !important;
+          margin: 10px auto !important;
+        }
+
+        .dex-container form, .theme-form-row {
+          display: inline-block !important;
+          margin: 5px !important;
+        }
+
+        .dex-container > div:has(.theme-form-row), 
+        .dex-container > div:has(form) {
+          margin-top: 0px !important;
+        }
+
+        .dex-btn, .theme-btn--success, .theme-btn-provider {
+          border-radius: 50px !important;
+          padding: 12px 30px !important;
+          font-weight: bold !important;
+          text-transform: none !important;
+          border: none !important;
+          min-width: 100px !important;
+          cursor: pointer;
+        }
+        .dex-btn-primary, .theme-btn--success {
+          background-color: var(--voda-red) !important;
+          color: white !important;
+        }
+        .theme-btn-provider {
+          background-color: #4A4D4E !important;
+          color: white !important;
+        }
+
+        .theme-heading {
+          font-weight: 300 !important;
+          margin-top: 5px !important;
+          margin-bottom: 5px !important;
+        }
+        .dex-subtle-text {
+          font-size: 1.2rem !important;
+          color: var(--voda-dark) !important;
+          margin-bottom: 1px !important;
+          font-weight: 400 !important;
+        }
+        .dex-list {
+          list-style: none !important;
+          padding-left: 0 !important;
+          margin-bottom: 1px !important;
+        }
+        .dex-list li {
+          font-size: 1.1rem !important;
+          color: #4A4D4E !important;
+          line-height: 1.8 !important;
+          margin-bottom: 1px !important;
+          display: flex;
+          align-items: center;
+        }
+        .dex-list li::before {
+          content: "•";
+          color: var(--voda-red);
+          font-weight: bold;
+          font-size: 1.5rem;
+          margin-right: 15px;
+        }
+        .dex-separator {
+          margin: 10px 0 !important;
+          opacity: 0.2;
+        }
+
+        .theme-navbar__logo-wrap {
+          display: flex !important;
+          justify-content: center !important;
+          margin-bottom: 20px !important;
+        }
+
+        .theme-navbar__logo {
+          width: 20% !important;
+          height: auto !important;
+          display: block !important;
+        }
+
+# Logo
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: dex-aibplus-aib-logo
+      namespace: aib-auth
+    binaryData:
+      logo.png: '{{ $.Files.Get "files/aib-logo.png" | b64enc }}'
+
+###########
+# Kubeflow
+###########
+
+# Headers
+# After oauth2-proxy authenticates with dex, validates cookies, and gets the headers.
+# Inject kubeflow-userid & kubeflow-groups headers to the auth response.
+# before Istio AuthorizationPolicies are evaluated
+  - apiVersion: networking.istio.io/v1alpha3
+    kind: EnvoyFilter
+    metadata:
+      name: inject-kubeflow-headers
+      namespace: aib-auth
+    spec:
+      workloadSelector:
+        labels:
+          app: oauth2-proxy
+      configPatches:
+        - applyTo: HTTP_FILTER
+          match:
+            context: SIDECAR_INBOUND
+            listener:
+              filterChain:
+                filter:
+                  name: "envoy.filters.network.http_connection_manager"
+                  subFilter:
+                    name: "envoy.filters.http.router"
+          patch:
+            operation: INSERT_BEFORE
+            value:
+              name: envoy.lua
+              typed_config:
+                "@type": "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua"
+                inlineCode: |
+                  function envoy_on_response(response_handle)
+                    local headers = response_handle:headers()
+
+                    -- 1. Inject UserID from the proxy's response email
+                    local email = headers:get("x-auth-request-email")
+                    if email and not headers:get("kubeflow-userid") then
+                      headers:add("kubeflow-userid", email)
+                    end
+
+                    -- 2. Inject Groups and clean them
+                    local groups = headers:get("x-auth-request-groups")
+                    if groups and not headers:get("kubeflow-groups") then
+                      -- Cleans JSON array chars if present (e.g. ["admin"] -> admin)
+                      local clean_groups = groups:gsub("[%[%]%\"]", "")
+                      headers:add("kubeflow-groups", clean_groups)
+                    end
+                  end
+
+# Static (single) Profile
+  - apiVersion: kubeflow.org/v1
+    kind: Profile
+    metadata:
+      name: aibplus-profile
+    spec:
+      owner:
+        kind: User
+        name: ${PROFILE_OWNER}

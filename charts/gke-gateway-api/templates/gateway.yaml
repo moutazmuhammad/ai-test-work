@@ -1,0 +1,91 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  addresses:
+  - type: NamedAddress
+    value: {{ .Values.addressName }}
+  listeners:
+    - name: {{ .Values.listener.name }}
+      port: {{ .Values.listener.port }}
+      protocol: {{ .Values.listener.protocol }}
+      hostname: {{ .Values.hostName | quote }}
+      {{- if .Values.listener.tls.certificates }}
+      tls:
+        mode: Terminate
+        certificateRefs:
+          {{- range .Values.listener.tls.certificates }}
+          {{- $sanitizedName := . | replace "*" "wildcard" | lower }}
+          - name: {{ $sanitizedName }}
+            kind: Secret
+          {{- end }}
+      {{- end }}
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: istio-route
+  namespace: {{ .Values.namespace }}
+spec:
+  parentRefs:
+  - name: {{ .Values.name }}
+    sectionName: {{ .Values.listener.name }}
+  hostnames:
+    {{- range .Values.listener.tls.certificates }}
+      - {{ . | quote }}
+    {{- end }}
+  rules:
+  - backendRefs:
+    - name: istio-ingressgateway
+      namespace: istio-system
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway
+  namespace: istio-system
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: {{ .Values.namespace }}
+  to:
+  - group: ""
+    kind: Service
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: istio-ingressgateway-hc
+  namespace: istio-system
+spec:
+  targetRef:
+    group: ""
+    kind: Service
+    name: istio-ingressgateway
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 15021
+        requestPath: /healthz/ready
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: cloud-armor-backend-policy
+  namespace: istio-system
+spec:
+  default:
+    securityPolicy: aib-plus-ingress-policy
+  targetRef:
+    group: ""
+    kind: Service
+    name: istio-ingressgateway

@@ -1,0 +1,659 @@
+# =============================================================================
+# AIB Platform — AWS overrides
+#
+# Full copy of common/aib_platform.yaml with AWS-specific domain and service
+# changes. All three sections (mesh-security, mesh-networking, mesh-egress)
+# contain lists that Helm replaces entirely, so the full content is required.
+#
+# ── Domains to change per market ──────────────────────────────────────────────
+#   Base domain    : dev.aibplus.vodacom.aws.corp       → <env>.aibplus.<market>.aws.corp
+#   MLRun          : mlrun.dev.aibplus.vodacom.aws.corp → mlrun.<env>.aibplus.<market>.aws.corp
+#   Nuclio         : nuclio.dev.aibplus.vodacom.aws.corp → nuclio.<env>.aibplus.<market>.aws.corp
+#   Kubeflow       : kubeflow.dev.aibplus.vodacom.aws.corp → kubeflow.<env>.aibplus.<market>.aws.corp
+#   Keycloak/Alert : alert.dev.aibplus.vodacom.aws.corp → alert.<env>.aibplus.<market>.aws.corp
+#   Dex            : dex.dev.aibplus.vodacom.aws.corp   → dex.<env>.aibplus.<market>.aws.corp
+#   ECR registry   : 490083271972.dkr.ecr.af-south-1.amazonaws.com → <account>.dkr.ecr.<region>.amazonaws.com
+#   ECR API        : api.ecr.af-south-1.amazonaws.com   → api.ecr.<region>.amazonaws.com
+#   S3             : s3.af-south-1.amazonaws.com        → s3.<region>.amazonaws.com
+#   S3 buckets     : *.s3.af-south-1.amazonaws.com      → *.s3.<region>.amazonaws.com
+#   STS            : sts.af-south-1.amazonaws.com       → sts.<region>.amazonaws.com
+#   NetIQ/IdP      : login.ppent.vodacom.co.za          → <idp-host> (Change by AIB+ Market)
+# =============================================================================
+
+## ----------------------------------------
+## Mesh Security
+## ----------------------------------------
+mesh-security:
+  meshSecurity:
+    mtls:
+      enabled: true
+      mode: STRICT
+      namespaces:
+        - name: aib-auth
+        - name: aib-system
+        - name: aib-data
+        - name: aib-serving
+        - name: mlrun-api-allow-plaintext
+          namespace: aib-system
+          selector:
+            release: mlrun
+            app.kubernetes.io/component: api
+          portLevelMtls:
+            8080:
+              mode: PERMISSIVE
+
+    authorizationPolicies:
+      - name: aib-auth
+        namespace: aib-auth
+        action: ALLOW
+        rules:
+          - from:
+              - namespaces:
+                  - aib-auth
+                  - istio-system
+                  - aib-system
+                  - aib-data
+
+      - name: oauth2
+        namespace: aib-auth
+        action: ALLOW
+        rules:
+          - to:
+              - hosts:
+                  - oauth2-proxy.aib-auth.svc.cluster.local
+              - paths:
+                  - /oauth2/*
+
+      - name: mlrun
+        namespace: aib-system
+        selector:
+          release: mlrun
+          app.kubernetes.io/component: ui
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - to:
+              - hosts:
+                  - "mlrun.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+                notPaths:
+                  - "/oauth2/*"
+
+      - name: mlrun-api
+        namespace: aib-system
+        selector:
+          release: mlrun
+          app.kubernetes.io/component: api
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - to:
+              - hosts:
+                  - "mlrun.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+
+      - name: mlrun-api-internal
+        namespace: aib-system
+        selector:
+          release: mlrun
+          app.kubernetes.io/component: api
+        action: ALLOW
+        rules:
+          - to:
+              - ports:
+                  - "8080"
+
+      - name: mlrun-projects
+        namespace: aib-system
+        selector:
+          release: mlrun
+          app.kubernetes.io/component: api
+        action: DENY
+        rules:
+          - to:
+            - operation:
+              methods: ["POST", "DELETE"]
+              paths: ["/api/projects", "/api/v1/projects", "/api/v2/projects"]
+              ports: ["8080"]
+            - operation:
+              methods: ["DELETE"]
+              paths: ["/api/projects/{*}", "/api/v1/projects/{*}", "/api/v2/projects/{*}"]
+              ports: ["8080"]
+            when:
+              - key: request.headers[x-is-project-owner]
+                notValues:
+                  - "true"
+
+      - name: nuclio
+        namespace: aib-system
+        selector:
+          app: nuclio
+          nuclio.io/app: dashboard
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - to:
+            - hosts:
+                - "nuclio.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+              notPaths:
+                - "/oauth2/*"
+
+      # Direct ClusterIP access bypassed the public auth layer; access is now blocked at port 8070.
+      # Verified on GCP: only mlrun-api accesses :8070 directly; notebooks use default-editor and mlrun-api. Re-confirm on EKS.
+      - name: nuclio-dashboard-internal
+        namespace: aib-system
+        selector:
+          app: nuclio
+          nuclio.io/app: dashboard
+        action: DENY
+        rules:
+          - from:
+              - notPrincipals:
+                  - "cluster.local/ns/aib-system/sa/mlrun-api"
+                  - "cluster.local/ns/aib-system/sa/mlrun-job-runner"
+                  # External UI traffic, already gated by oauth2-proxy above.
+                  - "cluster.local/ns/istio-system/sa/istio-ingressgateway"
+                  - "cluster.local/ns/aibplus-profile/sa/default-editor"
+            to:
+              - ports:
+                  - "8070"
+
+      - name: kubeflow-pipelines
+        namespace: aib-system
+        selector:
+          app: ml-pipeline-ui
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-dashboard
+        namespace: aib-system
+        selector:
+          app: kubeflow-dashboard
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-jupyter
+        namespace: aib-system
+        selector:
+          app: jupyter-web-app
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-tensorboards
+        namespace: aib-system
+        selector:
+          app: tensorboards-web-app
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-volumes
+        namespace: aib-system
+        selector:
+          app: volumes-web-app
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+
+      - name: kubeflow-notebook
+        namespace: aibplus-profile
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - to:
+              - hosts:
+                  - "kubeflow.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+
+      - name: kubeflow-mlmd
+        namespace: aib-system
+        selector:
+          component: metadata-envoy
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+
+      - name: seaweedfs-internal
+        namespace: aib-data
+        selector:
+          app.kubernetes.io/name: seaweedfs
+        action: ALLOW
+        rules:
+          - from:
+              - namespaces:
+                  - aib-data
+                  - aib-system
+                  - aibplus-profile
+                  - istio-system
+          - to:
+              - ports:
+                  - "8333"
+
+      - name: seaweedfs-admin
+        namespace: aib-data
+        selector:
+          app.kubernetes.io/component: admin
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - to:
+              - notPorts:
+                  - "33646"
+
+      # aib-ops has no istio sidecar, so this is enforced on the gateway itself.
+      # Grafana is intentionally not here: it uses its own admin login.
+      - name: prometheus
+        namespace: istio-system
+        selector:
+          app: istio-ingressgateway
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - to:
+              - hosts:
+                  - prometheus.dev.aibplus.vodacom.aws.corp   # Change by AIB+ Market
+                notPaths:
+                  - "/oauth2/*"
+
+    requestAuthentication: []
+    rateLimiting: []
+    envoyFilters:
+      - name: inject-kfp-userid-header
+        namespace: aib-system
+        selector:
+          app: ml-pipeline
+        configPatches:
+          - applyTo: HTTP_FILTER
+            match:
+              context: SIDECAR_INBOUND
+              listener:
+                filterChain:
+                  filter:
+                    name: "envoy.filters.network.http_connection_manager"
+                    subFilter:
+                      name: "envoy.filters.http.router"
+            patch:
+              operation: INSERT_BEFORE
+              value:
+                name: envoy.lua
+                typed_config:
+                  "@type": "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua"
+                  inlineCode: |
+                    function envoy_on_request(request_handle)
+                      local userid = request_handle:headers():get("kubeflow-userid")
+                      if not userid or userid == "" then
+                        local path = request_handle:headers():get(":path") or ""
+                        if not string.find(path, "ReportWorkflow") then
+                          request_handle:headers():add("kubeflow-userid", "system:serviceaccount:aib-system:mlrun-api")
+                        end
+                      end
+                    end
+
+## ----------------------------------------
+## Mesh Networking
+## ----------------------------------------
+mesh-networking:
+  meshNetworking:
+    domain: "dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+    namespace: aib-auth
+
+    gateway:
+      enabled: true
+      name: platform-ingress-gateway
+      selector:
+        istio: ingressgateway
+      port:
+        number: 80
+        name: http
+        protocol: HTTP
+
+    services:
+      - name: nuclio-dashboard
+        subdomain: nuclio
+        serviceNamespace: aib-system
+        port: 8070
+        timeout: 300s
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+        routes:
+          - pathPrefix: /
+            host: nuclio-dashboard.aib-system.svc.cluster.local
+            port: 8070
+
+        trafficPolicy:
+          tls:
+            mode: ISTIO_MUTUAL
+
+      - name: mlrun-ui
+        subdomain: mlrun
+        serviceNamespace: aib-system
+        port: 80
+
+        routes:
+          - pathPrefix: /mlrun/api
+            host: mlrun-api.aib-system.svc.cluster.local
+            port: 8080
+            rewrite: /api
+
+          - pathPrefix: /mlrun
+            host: mlrun-ui.aib-system.svc.cluster.local
+            port: 80
+
+          - pathPrefix: /api
+            host: mlrun-api.aib-system.svc.cluster.local
+            port: 8080
+
+          - pathPrefix: /
+            host: mlrun-ui.aib-system.svc.cluster.local
+            port: 80
+
+        trafficPolicy:
+          tls:
+            mode: ISTIO_MUTUAL
+
+      - name: dex
+        subdomain: dex
+        serviceNamespace: aib-auth
+        port: 5556
+        timeout: 300s
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+        trafficPolicy:
+          tls:
+            mode: ISTIO_MUTUAL
+
+      - name: oauth2-proxy
+        subdomain: auth
+        serviceNamespace: aib-auth
+        port: 80
+        timeout: 300s
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+        trafficPolicy:
+          tls:
+            mode: ISTIO_MUTUAL
+
+      - name: kubeflow-dashboard
+        subdomain: kubeflow
+        serviceNamespace: aib-system
+        port: 80
+        routes:
+        - pathPrefix: /oauth2
+          host: oauth2-proxy.aib-auth.svc.cluster.local
+          port: 80
+        - pathPrefix: /mlrun
+          redirect:
+            authority: mlrun.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+            uri: /
+            scheme: https
+        - pathPrefix: /nuclio
+          redirect:
+            authority: nuclio.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+            uri: /
+            scheme: https
+        - pathPrefix: /pipeline
+          host: ml-pipeline-ui.aib-system.svc.cluster.local
+          port: 80
+        - pathPrefix: /jupyter/
+          host: jupyter-web-app-service.aib-system.svc.cluster.local
+          port: 80
+          customHeaders:
+            request:
+              add:
+                x-forwarded-prefix: /jupyter/
+          rewrite: /
+        - pathPrefix: /tensorboards/
+          host: tensorboards-web-app-service.aib-system.svc.cluster.local
+          port: 80
+          customHeaders:
+            request:
+              add:
+                x-forwarded-prefix: /tensorboards/
+          rewrite: /
+        - pathPrefix: /volumes/
+          host: volumes-web-app-service.aib-system.svc.cluster.local
+          port: 80
+          customHeaders:
+            request:
+              add:
+                x-forwarded-prefix: /volumes/
+          rewrite: /
+        - pathPrefix: /ml_metadata
+          host: metadata-envoy-service.aib-system.svc.cluster.local
+          port: 9090
+        # CATCH-ALL MUST BE LAST
+        - pathPrefix: /
+          host: dashboard.aib-system.svc.cluster.local
+          port: 80
+
+        trafficPolicy:
+          tls:
+            mode: ISTIO_MUTUAL
+
+      - name: kube-prometheus-stack-prometheus
+        subdomain: prometheus
+        serviceNamespace: aib-ops
+        port: 9090
+        timeout: 600s
+
+        routes:
+          - pathPrefix: /oauth2
+            host: oauth2-proxy.aib-auth.svc.cluster.local
+            port: 80
+          # CATCH-ALL MUST BE LAST
+          - pathPrefix: /
+            host: kube-prometheus-stack-prometheus.aib-ops.svc.cluster.local
+            port: 9090
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+        trafficPolicy:
+          tls:
+            mode: DISABLE
+
+      - name: grafana
+        subdomain: grafana
+        serviceNamespace: aib-ops
+        port: 80
+        timeout: 600s
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+        trafficPolicy:
+          tls:
+            mode: DISABLE
+
+      - name: rai
+        subdomain: alert
+        serviceNamespace: aib-system
+        port: 80
+        timeout: 300s
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+      - name: rai-proxy
+        subdomain: raiproxy
+        serviceNamespace: aib-system
+        port: 80
+        timeout: 300s
+
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+
+## ----------------------------------------
+## Mesh Egress
+## ----------------------------------------
+mesh-egress:
+  meshEgress:
+    namespace: aib-auth
+
+    gateway:
+      enabled: true
+      name: platform-egress-gateway
+      serviceNamespace: istio-system
+
+      selector:
+        istio: egressgateway
+
+    defaults:
+      enabled: true
+      namespace: aib-system
+      port: 443
+      protocol: HTTPS
+      resolution: DNS
+
+    services:
+
+      # =========================================================
+      # Platform identity
+      # =========================================================
+      - name: netiq
+        namespace: aib-auth
+        host: login.ppent.vodacom.co.za  # Change by AIB+ Market
+
+      - name: dex
+        namespace: aib-auth
+        host: dex.dev.aibplus.vodacom.aws.corp  # Change by AIB+ Market
+
+      # =========================================================
+      # AWS Services (replaces GCP registries)
+      # =========================================================
+
+      # ECR — container registry
+      - name: ecr-registry
+        host: 490083271972.dkr.ecr.af-south-1.amazonaws.com  # Change by AIB+ Market
+
+      # ECR API — ecr:GetAuthorizationToken
+      - name: ecr-api
+        host: api.ecr.af-south-1.amazonaws.com  # Change by AIB+ Market (region)
+
+      # S3 — object storage
+      - name: s3
+        host: s3.af-south-1.amazonaws.com  # Change by AIB+ Market (region)
+
+      # S3 virtual-hosted-style bucket access
+      - name: s3-buckets
+        host: "gsm-grp-shared-490083271972-af-south-1.s3.af-south-1.amazonaws.com"  # Change by AIB+ Market (bucket.region)
+
+      # STS — IRSA token exchange
+      - name: sts
+        host: sts.af-south-1.amazonaws.com  # Change by AIB+ Market (region)
+
+      # Docker Hub — base images
+      - name: docker-io
+        host: docker.io
+
+      # =========================================================
+      # MLRun marketplace
+      # =========================================================
+      - name: mlrun-marketplace
+        host: mlrun.github.io
+
+      # =========================================================
+      # Language runtime package mirrors
+      # =========================================================
+
+      # ----- Go (proxy + checksum DB) -----
+      - name: golang-proxy
+        host: proxy.golang.org
+
+      - name: golang-sum
+        host: sum.golang.org
+
+      # ----- Python 3.9 / 3.10 / 3.11 / 3.12 (pip) -----
+      - name: pypi
+        host: pypi.org
+
+      - name: pypi-files
+        host: files.pythonhosted.org
+
+      - name: pythonhosted
+        host: pythonhosted.org
+
+      # ----- .NET Core (NuGet) -----
+      - name: nuget-api
+        host: api.nuget.org
+
+      - name: nuget-www
+        host: www.nuget.org
+
+      - name: dotnet-cli
+        host: dotnetcli.azureedge.net
+
+      - name: dotnet-builds
+        host: dotnetbuilds.azureedge.net
+
+      # ----- Java (Maven Central / Sonatype) -----
+      - name: maven-central
+        host: repo.maven.apache.org
+
+      - name: maven-repo1
+        host: repo1.maven.org
+
+      - name: sonatype-central
+        host: central.sonatype.com
+
+      # ----- NodeJS (npm + node distributions) -----
+      - name: npm-registry
+        host: registry.npmjs.org
+
+      - name: npmjs
+        host: npmjs.org
+
+      - name: nodejs-dist
+        host: nodejs.org
+
+      # ----- Shell / OS package managers -----
+      - name: debian-deb
+        host: deb.debian.org
+        port: 80
+        protocol: HTTP
+
+      - name: debian-security
+        host: security.debian.org
+        port: 80
+        protocol: HTTP
+
+      - name: ubuntu-archive
+        host: archive.ubuntu.com
+        port: 80
+        protocol: HTTP
+
+      - name: ubuntu-security
+        host: security.ubuntu.com
+        port: 80
+        protocol: HTTP
+
+      - name: alpine-cdn
+        host: dl-cdn.alpinelinux.org
+
+      - name: fedora-mirrors
+        host: mirrors.fedoraproject.org
+
+      # ----- Ruby (RubyGems) -----
+      - name: rubygems
+        host: rubygems.org
+
+      - name: rubygems-index
+        host: index.rubygems.org
+
+      - name: rubygems-api
+        host: api.rubygems.org

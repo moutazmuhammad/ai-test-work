@@ -1,0 +1,46 @@
+image:
+  repository: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/proxy-aibplus
+  tag: v03 # v04 is for AWS
+
+name: rai-proxy
+namespace: aib-system
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  protocol: TCP
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+env:
+  - name: RESPONSIBLE_AI_ENDPOINT
+    value: http://rai
+  - name: AWS_REGION
+    value: af-south-1
+  - name: PROJECT_ID
+    value: vf-grp-aib-dev-cmr-mle-lab
+  - name: CENTRAL_FIRESTORE_PROJECT_ID
+    value: vf-grp-aib-prd-orchestrate
+  - name: CENTRAL_FIRESTORE_COLLECTION
+    value: instancesProxyConfigs
+  - name: GOOGLE_MODEL_PATTERNS
+    value: '["v.*/projects/.*/locations/.*/publishers/.*/models/(?P<model>[^@]*)@?.*:(predict|generateContent|embedContent)", "v.*/publishers/.*/models/(?P<model>.*)"]'
+  - name: OPENAI_MODEL_PATTERNS
+    value: '["(?P<publisher>.*)/deployments/(?P<deployment>.*?)/"]'
+  - name: GOOGLE_VERTEX_ENDPOINT_PATTERNS
+    value: '["v.*/projects/.*/locations/.*/endpoints/(?P<endpoint>[^@]*)@?.*:(predict|generateContent)"]'
+  - name: BEDROCK_MODEL_PATTERNS
+    value: '["^model/(?P<model>.*?)/(?:invoke|converse|invoke-with-response-stream|converse-stream)$"]'
+  - name: GOOGLE_VERTEX_ENDPOINT_SERVICE_ENDPOINT
+    value: http://rai
+  - name: IMAGE_TAG_URL
+    value: http://rai

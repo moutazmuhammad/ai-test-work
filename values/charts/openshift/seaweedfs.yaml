@@ -1,0 +1,71 @@
+# =============================================================================
+# SeaweedFS - OpenShift (OCP / ROSA / ARO) overlay
+#
+# Apply on top of values/common/seaweedfs.yaml. See ./README.md.
+#
+# Three of the four `restricted-v2` SCC requirements are already met by the
+# common file (allowPrivilegeEscalation: false, drop ALL caps, RuntimeDefault
+# seccomp). This overlay only adds the OpenShift-specific bit:
+#
+#   podSecurityContext.runAsNonRoot: true     (no runAsUser/runAsGroup/fsGroup
+#                                              — SCC admission injects them
+#                                              from the namespace's allocated
+#                                              range)
+#   containerSecurityContext.runAsNonRoot: true  (deep-merges with the
+#                                                 common containerSecurityContext)
+#
+# This is OpenShift-only because the upstream chrislusf/seaweedfs image's
+# USER is root: setting runAsNonRoot without a UID would crash the pod on
+# any cluster that does not have an SCC-style admission webhook injecting
+# one (i.e. GKE/EKS/AKS).
+#
+# PVC volumes (no hostPath) are already the default in common.
+#
+# Images come from the SAME central GCP Artifact Registry as every other
+# cloud (set in common/seaweedfs.yaml). OpenShift nodes cannot pull from
+# GCP AR without credentials — provide an imagePullSecret as documented
+# in the README and reference it via global.imagePullSecrets below.
+# =============================================================================
+
+# Pull secret for the central GCP Artifact Registry. See README.md for
+# how to create the `gcp-ar-pull` Secret in namespace aib-data.
+
+# ---------------------------------------------------------------------------
+# runAsNonRoot on every component. Pod-level enables the SCC UID injection;
+# container-level deep-merges with the hardening already set in common
+# (allowPrivilegeEscalation/capabilities/seccomp).
+# ---------------------------------------------------------------------------
+master:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+  containerSecurityContext:
+    runAsNonRoot: true
+
+volume:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+  containerSecurityContext:
+    runAsNonRoot: true
+
+filer:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+  containerSecurityContext:
+    runAsNonRoot: true
+
+s3:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+  containerSecurityContext:
+    runAsNonRoot: true
+
+admin:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+  containerSecurityContext:
+    runAsNonRoot: true

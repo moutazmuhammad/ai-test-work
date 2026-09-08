@@ -1,0 +1,37 @@
+global:
+  hub: europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images
+  tag: 1.29.0
+
+service:
+  type: ClusterIP
+  ports:
+    - name: status-port
+      port: 15021
+      protocol: TCP
+      targetPort: 15021
+    - name: https
+      port: 443
+      protocol: TCP
+      targetPort: 443
+labels:
+  istio: egressgateway
+replicaCount: 1
+autoscaling:
+  enabled: false
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+podDisruptionBudget:
+  minAvailable: 1
+
+terminationGracePeriodSeconds: 10
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0

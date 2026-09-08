@@ -1,0 +1,487 @@
+## Minimal Dev Environment
+
+namespaces:
+# Istio Control Plane
+- name: istio-system
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: infrastructure
+    platform/component: istio
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "50m"
+            memory: "64Mi"
+          defaultRequest:
+            cpu: "25m"
+            memory: "32Mi"
+          max:
+            cpu: "4"
+            memory: "8Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "8"
+        requests.memory: "16Gi"
+        pods: "20"
+
+# External Secrets
+- name: external-secrets
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: infrastructure
+    istio-injection: disabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "100m"
+            memory: "128Mi"
+          defaultRequest:
+            cpu: "50m"
+            memory: "64Mi"
+          max:
+            cpu: "500m"
+            memory: "256Mi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "1"
+        requests.memory: "2Gi"
+        pods: "10"
+
+# Kyverno
+- name: kyverno
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: infrastructure
+    istio-injection: disabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "100m"
+            memory: "128Mi"
+          defaultRequest:
+            cpu: "50m"
+            memory: "64Mi"
+          max:
+            cpu: "2"
+            memory: "2Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "2"
+        requests.memory: "4Gi"
+        pods: "10"
+
+# Authentication
+- name: aib-auth
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: authentication
+    istio-injection: enabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "100m"
+            memory: "128Mi"
+          defaultRequest:
+            cpu: "50m"
+            memory: "64Mi"
+          max:
+            cpu: "2"
+            memory: "2Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "4"
+        requests.memory: "8Gi"
+        pods: "20"
+
+# ML Platform
+- name: aib-system
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: ml-platform
+    istio-injection: enabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          # Matches the live cluster; the old 250m/500Mi would cap every
+          # limitless container. Kaniko gets explicit limits via PLT-05 instead.
+          default:
+            cpu: "1"
+            memory: "4Gi"
+          defaultRequest:
+            cpu: "100m"
+            memory: "128Mi"
+          max:
+            cpu: "8"
+            memory: "20Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "96"
+        requests.memory: "192Gi"
+        pods: "150"
+        persistentvolumeclaims: "30"
+
+# Data Services
+- name: aib-data
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: data-services
+    istio-injection: enabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "250m"
+            memory: "512Mi"
+          defaultRequest:
+            cpu: "100m"
+            memory: "128Mi"
+          max:
+            cpu: "8"
+            memory: "32Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "32"
+        requests.memory: "192Gi"
+        pods: "30"
+        persistentvolumeclaims: "30"
+
+# Serving
+- name: aib-serving
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: serving
+    istio-injection: enabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "100m"
+            memory: "256Mi"
+          defaultRequest:
+            cpu: "50m"
+            memory: "64Mi"
+          max:
+            cpu: "4"
+            memory: "8Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "16"
+        requests.memory: "32Gi"
+        pods: "50"
+
+# Operations
+- name: aib-ops
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: operations
+    istio-injection: disabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "100m"
+            memory: "256Mi"
+          defaultRequest:
+            cpu: "50m"
+            memory: "64Mi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "8"
+        requests.memory: "24Gi"
+        pods: "20"
+
+# Governance
+- name: aib-governance
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: governance
+    istio-injection: disabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "50m"
+            memory: "64Mi"
+          defaultRequest:
+            cpu: "25m"
+            memory: "32Mi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "500m"
+        requests.memory: "512Mi"
+        pods: "5"
+
+# GitOps
+- name: argocd-agent
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: gitops
+    istio-injection: disabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "100m"
+            memory: "128Mi"
+          defaultRequest:
+            cpu: "50m"
+            memory: "64Mi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "4"
+        requests.memory: "4Gi"
+        pods: "10"
+
+#### PROD Values ####
+
+# namespaces:
+#   - name: istio-system
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: infrastructure
+#       platform/component: istio
+#     limitRange:
+#       name: default-limits
+#       spec:
+#         limits:
+#           - type: Container
+#             max:
+#               cpu: "4"
+#               memory: "8Gi"
+#             min:
+#               cpu: "50m"
+#               memory: "64Mi"
+#     resourceQuota:
+#       name: istio-quota
+#       spec:
+#         hard:
+#           requests.cpu: "8"
+#           requests.memory: "16Gi"
+#           pods: "20"
+
+- name: cert-manager
+  labels:
+    app.kubernetes.io/part-of: aib-platform
+    app.kubernetes.io/tier: infrastructure
+    istio-injection: disabled
+  limitRange:
+    spec:
+      limits:
+        - type: Container
+          default:
+            cpu: "200m"
+            memory: "256Mi"
+          max:
+            cpu: "1"
+            memory: "1Gi"
+  resourceQuota:
+    spec:
+      hard:
+        requests.cpu: "1"
+        requests.memory: "2Gi"
+        pods: "10"
+
+#   - name: external-secrets
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: infrastructure
+#       istio-injection: disabled
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "1"
+#           requests.memory: "2Gi"
+#           pods: "10"
+
+#   - name: kyverno
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: infrastructure
+#       istio-injection: disabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             max:
+#               cpu: "2"
+#               memory: "2Gi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "2"
+#           requests.memory: "4Gi"
+#           pods: "10"
+
+#   - name: aib-auth
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: authentication
+#       istio-injection: enabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "500m"
+#               memory: "512Mi"
+#             max:
+#               cpu: "2"
+#               memory: "2Gi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "4"
+#           requests.memory: "8Gi"
+#           pods: "20"
+
+#   - name: aib-system
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: ml-platform
+#       istio-injection: enabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "500m"
+#               memory: "1Gi"
+#             max:
+#               cpu: "8"
+#               memory: "16Gi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "96"
+#           requests.memory: "192Gi"
+#           pods: "150"
+#           persistentvolumeclaims: "30"
+
+#   - name: aib-data
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: data-services
+#       istio-injection: enabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "1"
+#               memory: "2Gi"
+#             max:
+#               cpu: "8"
+#               memory: "32Gi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "32"
+#           requests.memory: "192Gi"
+#           pods: "30"
+#           persistentvolumeclaims: "30"
+
+#   # Redis sidecar exclusion handled separately via annotations
+
+#   - name: aib-serving
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: serving
+#       istio-injection: enabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "500m"
+#               memory: "1Gi"
+#             max:
+#               cpu: "4"
+#               memory: "8Gi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "16"
+#           requests.memory: "32Gi"
+#           pods: "50"
+
+#   - name: aib-ops
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: operations
+#       istio-injection: disabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "500m"
+#               memory: "1Gi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "8"
+#           requests.memory: "24Gi"
+#           pods: "20"
+
+#   - name: aib-governance
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: governance
+#       istio-injection: disabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "200m"
+#               memory: "256Mi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "500m"
+#           requests.memory: "512Mi"
+#           pods: "5"
+
+#   - name: argocd-agent
+#     labels:
+#       app.kubernetes.io/part-of: aib-platform
+#       app.kubernetes.io/tier: gitops
+#       istio-injection: disabled
+#     limitRange:
+#       spec:
+#         limits:
+#           - type: Container
+#             default:
+#               cpu: "500m"
+#               memory: "512Mi"
+#     resourceQuota:
+#       spec:
+#         hard:
+#           requests.cpu: "4"
+#           requests.memory: "4Gi"
+#           pods: "10"
+

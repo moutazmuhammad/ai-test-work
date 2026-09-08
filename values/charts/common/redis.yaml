@@ -1,0 +1,338 @@
+# Redis — HA Sentinel topology: one `redis-node` StatefulSet whose pods run redis, sentinel
+# and a kubectl sidecar that moves the isMaster label so redis-master follows each failover.
+
+fullnameOverride: redis
+architecture: replication
+
+networkPolicy:
+  enabled: false
+
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  registry: europe-west1-docker.pkg.dev
+  repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-redis
+  tag: sha-e49307e57986
+  pullPolicy: IfNotPresent
+
+volumePermissions:
+  enabled: false
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-os-shell
+    tag: 257a004fe2c0-fixed
+    pullPolicy: IfNotPresent
+
+# Runs as a sidecar on every node pod: watches Sentinel's +switch-master events
+# and relabels pods so the redis-master Service follows the elected master.
+kubectl:
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-kubectl
+    tag: 07ed0fed8ee8
+    pullPolicy: IfNotPresent
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+      ephemeral-storage: 256Mi
+
+sysctl:
+  enabled: false
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-os-shell
+    tag: 257a004fe2c0-fixed
+    pullPolicy: IfNotPresent
+
+auth:
+  enabled: true
+  # Sentinel's own port also requires the password. Safe here because clients
+  # reach Redis through the redis-master Service, not through Sentinel.
+  sentinel: true
+  existingSecret: redis-credentials
+  existingSecretPasswordKey: redis-password
+  # File-based auth keeps the password off the process command line.
+  usePasswordFiles: true
+  usePasswordFileFromSecret: true
+
+commonConfiguration: |-
+  # Modules used by the MLRun online feature store
+  loadmodule /opt/bitnami/redis/lib/redis/modules/redisearch.so
+  loadmodule /opt/bitnami/redis/lib/redis/modules/rejson.so
+  # Durability — AOF only, no RDB snapshots
+  appendonly yes
+  appendfsync everysec
+  save ""
+  # Memory bounding — feature-store hot keys naturally fit an LRU model
+  maxmemory 384mb
+  maxmemory-policy allkeys-lru
+  # Connection hygiene
+  timeout 0
+  tcp-keepalive 60
+  # Logging — everything goes to stdout (no logfile set), so `kubectl logs`
+  # and any future log shipper pick it up. notice is the production level;
+  # verbose/debug are per-command noisy.
+  loglevel notice
+  # Slow query log: any command over 10ms is retained in-memory and exported
+  # by redis-exporter as redis_slowlog_length / redis_last_slow_execution_*.
+  slowlog-log-slower-than 10000
+  slowlog-max-len 128
+  # Records the operations behind latency spikes; read with `LATENCY DOCTOR`.
+  latency-monitor-threshold 100
+  # Optional write fencing: refuse writes on a master with no healthy replica,
+  # so an isolated master cannot accept writes that a failover would discard.
+  # Trades availability for durability — enable deliberately.
+  # min-replicas-to-write 1
+  # min-replicas-max-lag 10
+
+# NOTE: the `master:` block is intentionally absent. With sentinel.enabled the chart renders neither the redis-master nor the redis-replicas StatefulSet —
+# every node comes from the `replica:` block below, and each one is a failover candidate.
+
+replica:
+  kind: StatefulSet
+  # 3 nodes: quorum of 2 survives the loss of one pod. Two nodes cannot form a quorum after a failure, so 3 is the minimum for genuine automatic failover.
+  replicaCount: 3
+
+  podAnnotations:
+    sidecar.istio.io/inject: "false"
+    aib.vodacom.co.za/sidecar-exemption-reason: "Istio sidecar disabled to reduce latency on Redis in-memory operations"
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  # Applies to every node, since in Sentinel mode all nodes load replica.conf.
+  disableCommands:
+    - FLUSHDB
+    - FLUSHALL
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 1Gi
+
+  persistence:
+    enabled: true
+    storageClass: aib-block-performance
+    size: 8Gi
+    accessModes:
+      - ReadWriteOnce
+
+  service:
+    type: ClusterIP
+    ports:
+      redis: 6379
+
+  # Keeps a quorum during voluntary disruptions (node drains, cluster upgrades).
+  pdb:
+    create: true
+    minAvailable: 2
+
+  # Requires >= 3 schedulable nodes; a pod that cannot spread stays Pending.
+  podAntiAffinityPreset: hard
+
+  livenessProbe:
+    enabled: true
+  readinessProbe:
+    enabled: true
+
+  # Required by sentinel.masterService: the kubectl sidecar needs an API token to patch the isMaster pod label. Pod-level setting overrides the ServiceAccount default below.
+  automountServiceAccountToken: true
+
+sentinel:
+  enabled: true
+
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/redis-sentinel
+    tag: v1
+    pullPolicy: IfNotPresent
+
+  masterSet: mymaster
+  # 2 of 3 sentinels must agree the master is down before a failover starts.
+  quorum: 2
+
+  # Failover timing. Chart defaults (60s / 180s) are very conservative; these detect a dead master in ~5s and complete promotion well inside a minute.
+  downAfterMilliseconds: 5000
+  failoverTimeout: 60000
+  # Reconfigure replicas onto the new master one at a time, so a resync never takes every remaining node out of service at once.
+  parallelSyncs: 1
+  # The redis container waits for the failover to finish before shutting down, so a rolling restart of the master pod does not drop writes on the floor.
+  redisShutdownWaitFailover: true
+
+  # Publishes the redis-master Service, whose selector is isMaster: "true". This is what keeps non-Sentinel-aware clients working across a failover.
+  masterService:
+    enabled: true
+    type: ClusterIP
+    ports:
+      redis: 6379
+
+  service:
+    type: ClusterIP
+    ports:
+      redis: 6379
+      sentinel: 26379
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+      ephemeral-storage: 256Mi
+
+  # Sentinel state is rebuilt from the chart's config on start and from the other sentinels at runtime, so no PVC is needed.
+  persistence:
+    enabled: false
+
+  livenessProbe:
+    enabled: true
+  readinessProbe:
+    enabled: true
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+
+# Grants the pods/list + pods/patch Role the kubectl sidecar needs for the isMaster label. Without it, sentinel.masterService fails chart validation.
+rbac:
+  create: true
+
+tls:
+  enabled: false
+
+metrics:
+  enabled: true
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/redis-exporter
+    tag: v1
+    pullPolicy: IfNotPresent
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+      ephemeral-storage: 256Mi
+
+  # One exporter sidecar per node pod, scraped through the redis-metrics Service. Prometheus (aib-ops) selects ServiceMonitors in every namespace,
+  # so no release label is needed.
+  serviceMonitor:
+    enabled: true
+    namespace: aib-data
+    interval: 30s
+  podMonitor:
+    enabled: false
+
+  # Example: Rendered as a PrometheusRule in aib-data; the aib-ops Prometheus selects
+  # rules cluster-wide (ruleSelectorNilUsesHelmValues: false).
+  # prometheusRule:
+  #   enabled: true
+  #   rules:
+  #     - alert: RedisNodeDown
+  #       expr: redis_up{namespace="aib-data"} == 0
+  #       for: 5m
+  #       labels:
+  #         severity: warning
+  #       annotations:
+  #         summary: "Redis node {{ `{{ $labels.pod }}` }} is not responding"
+  #         description: "The exporter on {{ `{{ $labels.pod }}` }} cannot reach its Redis instance. HA survives one node; investigate before a second one fails."
+
+  #     - alert: RedisNoMaster
+  #       expr: count(redis_instance_info{namespace="aib-data", role="master"}) == 0
+  #       for: 2m
+  #       labels:
+  #         severity: critical
+  #       annotations:
+  #         summary: "Redis has no master — writes are failing"
+  #         description: "No node reports role=master. Sentinel failed to elect one; the redis-master Service has no endpoint and every write is rejected."
+
+  #     - alert: RedisSplitBrain
+  #       expr: count(redis_instance_info{namespace="aib-data", role="master"}) > 1
+  #       for: 5m
+  #       labels:
+  #         severity: critical
+  #       annotations:
+  #         summary: "Redis reports {{ `{{ $value }}` }} masters"
+  #         description: "More than one node claims role=master. Writes may be landing on a node that will be demoted and lose them."
+
+  #     - alert: RedisReplicationBroken
+  #       expr: redis_master_link_up{namespace="aib-data"} == 0
+  #       for: 5m
+  #       labels:
+  #         severity: warning
+  #       annotations:
+  #         summary: "Redis replica {{ `{{ $labels.pod }}` }} lost its master link"
+  #         description: "The replica is not replicating. If it is promoted it will serve stale data."
+
+  #     - alert: RedisHAQuorumAtRisk
+  #       expr: kube_statefulset_status_replicas_ready{namespace="aib-data", statefulset="redis-node"} < 2
+  #       for: 5m
+  #       labels:
+  #         severity: critical
+  #       annotations:
+  #         summary: "Fewer than 2 Redis node pods are ready"
+  #         description: "Sentinel needs 2 of 3 to reach quorum. Below that no automatic failover can happen."
+
+  #     - alert: RedisMemoryNearLimit
+  #       expr: (redis_memory_used_bytes{namespace="aib-data"} / redis_memory_max_bytes{namespace="aib-data"}) > 0.9
+  #       for: 15m
+  #       labels:
+  #         severity: warning
+  #       annotations:
+  #         summary: "Redis {{ `{{ $labels.pod }}` }} is above 90% of maxmemory"
+  #         description: "allkeys-lru eviction is active; feature-store lookups will start missing."

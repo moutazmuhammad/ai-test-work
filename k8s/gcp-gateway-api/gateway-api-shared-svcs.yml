@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: external-gateway-api
+  namespace: gateway
+spec:
+  gatewayClassName: gke-l7-global-external-managed
+  addresses:
+  - type: NamedAddress
+    value: gke-aib-plus-shared-services-ip  # change it
+  listeners:
+
+  - name: https
+    protocol: HTTPS
+    port: 443
+    hostname: "argocd.dev.plus.aib.vodafone.com" # change it
+    tls:
+      mode: Terminate
+      certificateRefs: # created the secret and stored files locally for now until the external secrets component is implemented
+      - kind: Secret
+        name: argocd.dev.plus.aib.vodafone.com
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argo-route
+  namespace: gateway
+spec:
+  parentRefs:
+  - name: external-gateway-api
+    sectionName: https
+  hostnames:
+  - "argocd.dev.plus.aib.vodafone.com" # change it base on cluster
+  rules:
+  - backendRefs:
+    - name: argocd-server
+      namespace: argocd
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway
+  namespace: argocd
+spec:
+  from:
+  - group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    namespace: gateway
+  to:
+  - group: ""
+    kind: Service
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: argocd-hc
+  namespace: argocd
+spec:
+  targetRef:
+    group: ""
+    kind: Service
+    name: argocd-server
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 8080
+        requestPath: /
+    logConfig:
+      enabled: true
+    checkIntervalSec: 30
+    timeoutSec: 30
+---
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: cloud-armor-backend-policy
+  namespace: argocd
+spec:
+  default:
+    securityPolicy: aib-plus-ingress-policy
+  targetRef:
+    group: ""
+    kind: Service
+    name: argocd-server

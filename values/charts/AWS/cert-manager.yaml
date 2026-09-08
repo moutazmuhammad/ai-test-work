@@ -1,0 +1,20 @@
+# =============================================================================
+# Cert-Manager — AWS overrides
+#
+# Overrides:
+#   - Image registry/repos: GAR (europe-west1-docker.pkg.dev) → ECR
+# =============================================================================
+
+image:
+  registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+  repository: aibplus-images/cert-manager-controller
+
+cainjector:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/cert-manager-cainjector
+
+webhook:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/cert-manager-webhook

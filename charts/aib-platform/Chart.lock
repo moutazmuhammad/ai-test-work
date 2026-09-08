@@ -1,0 +1,12 @@
+dependencies:
+- name: mesh-security
+  repository: file://mesh-security
+  version: 1.0.0
+- name: mesh-networking
+  repository: file://mesh-networking
+  version: 1.0.0
+- name: mesh-egress
+  repository: file://mesh-egress
+  version: 1.0.0
+digest: sha256:82d900fafad77926d66091ec703d581db451303bf65f90637d0e5d337f860dc7
+generated: "2026-05-21T14:28:45.090910963Z"

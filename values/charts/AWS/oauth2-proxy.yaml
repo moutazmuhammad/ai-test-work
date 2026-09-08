@@ -1,0 +1,75 @@
+# =============================================================================
+# OAuth2 Proxy — AWS overrides
+#
+# ── Domains to change per market ──────────────────────────────────────────────
+#   Dex issuer     : dex.dev.aibplus.vodacom.aws.corp   → dex.<env>.aibplus.<market>.aws.corp
+#   Auth callback  : auth.dev.aibplus.vodacom.aws.corp  → auth.<env>.aibplus.<market>.aws.corp
+#   Cookie domain  : .dev.aibplus.vodacom.aws.corp      → .<env>.aibplus.<market>.aws.corp
+#   IdP logout     : login.ppent.vodacom.co.za          → <idp-host> (Change by AIB+ Market)
+#   ECR image      : 490083271972.dkr.ecr.af-south-1... → <account>.dkr.ecr.<region>...
+# =============================================================================
+
+image:
+  registry: "490083271972.dkr.ecr.af-south-1.amazonaws.com"  # Change by AIB+ Market
+  repository: "aibplus-images/oauth2-proxy"
+
+# extraEnv is a list — full replacement required
+extraEnv:
+  - name: OAUTH2_PROXY_SSL_INSECURE_SKIP_VERIFY
+    value: "true"
+  - name: OAUTH2_PROXY_PROVIDER
+    value: "oidc"
+  - name: OAUTH2_PROXY_OIDC_ISSUER_URL
+    value: "https://dex.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+  - name: OAUTH2_PROXY_SCOPE
+    value: "openid email profile groups"
+  - name: OAUTH2_PROXY_REDIRECT_URL
+    value: "https://auth.dev.aibplus.vodacom.aws.corp/oauth2/callback"  # Change by AIB+ Market
+  - name: OAUTH2_PROXY_HTTP_ADDRESS
+    value: "0.0.0.0:4180"
+  - name: OAUTH2_PROXY_UPSTREAMS
+    value: "static://200"
+  - name: OAUTH2_PROXY_REVERSE_PROXY
+    value: "true"
+  - name: OAUTH2_PROXY_COOKIE_DOMAINS
+    value: ".dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
+  - name: OAUTH2_PROXY_WHITELIST_DOMAINS
+    value: ".dev.aibplus.vodacom.aws.corp,login.ppent.vodacom.co.za"  # Change by AIB+ Market
+  - name: OAUTH2_PROXY_COOKIE_SECURE
+    value: "true"
+  - name: OAUTH2_PROXY_COOKIE_HTTPONLY
+    value: "true"
+  - name: OAUTH2_PROXY_COOKIE_SAMESITE
+    value: "lax"
+  - name: OAUTH2_PROXY_COOKIE_EXPIRE
+    value: "4h"
+  - name: OAUTH2_PROXY_COOKIE_REFRESH
+    value: "30m"
+  - name: OAUTH2_PROXY_EMAIL_DOMAINS
+    value: "*"
+  - name: OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL
+    value: "true"
+  - name: OAUTH2_PROXY_SET_AUTHORIZATION_HEADER
+    value: "true"
+  - name: OAUTH2_PROXY_SET_XAUTHREQUEST
+    value: "true"
+  - name: OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER
+    value: "true"
+  - name: OAUTH2_PROXY_PASS_USER_HEADERS
+    value: "true"
+  - name: OAUTH2_PROXY_OIDC_EMAIL_CLAIM
+    value: "email"
+  - name: OAUTH2_PROXY_OIDC_GROUPS_CLAIM
+    value: "groups"
+  - name: OAUTH2_PROXY_SKIP_PROVIDER_BUTTON
+    value: "true"
+  - name: OAUTH2_PROXY_SKIP_AUTH_REGEX
+    value: "^/health$, ^/ready$, ^/metrics$"
+  - name: OAUTH2_PROXY_BACKEND_LOGOUT_URL
+    value: "https://login.ppent.vodacom.co.za/nidp/oauth/v1/nam/end_session"  # Change by AIB+ Market
+  - name: OAUTH2_PROXY_PASS_ID_TOKEN
+    value: "true"
+  - name: OAUTH2_PROXY_PROXY_LOGOUT_URL
+    value: "https://login.ppent.vodacom.co.za/nidp/oauth/v1/nam/end_session"  # Change by AIB+ Market
+  - name: OAUTH2_PROXY_INQUIRE_USERINFO
+    value: "true"

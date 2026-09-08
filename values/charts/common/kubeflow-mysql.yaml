@@ -1,0 +1,156 @@
+fullnameOverride: mysql
+
+networkPolicy:
+  enabled: false
+
+global:
+  security:
+    allowInsecureImages: true
+
+image:
+  registry: europe-west1-docker.pkg.dev
+  repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-mysql
+  tag: 8.0.38-debian-12-r1-review-5
+  pullPolicy: IfNotPresent
+
+volumePermissions:
+  enabled: false
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-os-shell
+    tag: 257a004fe2c0-fixed
+
+
+# Metrics — mysqld-exporter sidecar scraped by the aib-ops Prometheus (root over localhost:3306).
+# 9104 is excluded from the Istio sidecar (annotation below) and opened in network-policies.yaml; 3306 untouched.
+
+metrics:
+  enabled: true
+  image:
+    registry: europe-west1-docker.pkg.dev
+    repository: vf-grp-aib-dev-mirror/aib-plus-images/bitnami-mysqld-exporter
+    tag: 0.17.2-debian-12-r16
+    pullPolicy: IfNotPresent
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+      ephemeral-storage: 50Mi
+    limits:
+      cpu: 100m
+      memory: 96Mi
+      ephemeral-storage: 256Mi
+
+  # Standalone instance, so no replication collectors. innodb_metrics adds
+  # buffer-pool/row-lock detail at low cardinality on top of the defaults.
+  extraArgs:
+    primary:
+      - --collect.info_schema.innodb_metrics
+
+  serviceMonitor:
+    enabled: true
+    namespace: aib-data
+    interval: 30s
+
+auth:
+  existingSecret: mysql-credentials
+  createDatabase: false
+  
+tls:
+  enabled: false
+
+# Primary
+primary:
+
+  replicaCount: 1
+
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+
+  containerSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seLinuxOptions: null
+    capabilities:
+      drop:
+        - ALL
+
+  configuration: ""
+
+  podAnnotations:
+    # Keep 9104 out of the sidecar's inbound redirect so the sidecar-less
+    # aib-ops Prometheus can scrape the exporter directly. 3306 is untouched.
+    traffic.sidecar.istio.io/excludeInboundPorts: "9104"
+
+  persistence:
+    enabled: true
+    storageClass: aib-block-performance
+    size: 5Gi
+
+  extraEnvVarsSecret: mysql-credentials
+
+  extraFlags: []
+
+  # Resources (safe minimal defaults)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+      ephemeral-storage: 1Gi
+
+  # Service
+  service:
+    type: ClusterIP
+    ports:
+      mysql: 3306
+
+initdbScripts:
+  01-kubeflow.sh: |
+    #!/bin/bash
+    set -e
+
+    echo ">>> INIT SCRIPT STARTED"
+
+    ROOT_PW=$(cat /opt/bitnami/mysql/secrets/mysql-root-password)
+    KUBEFLOW_DB_PASSWORD="${KUBEFLOW_DB_PASSWORD}"
+
+    echo "Creating databases..."
+
+    /opt/bitnami/mysql/bin/mysql -uroot -p"$ROOT_PW" <<EOF
+    CREATE DATABASE IF NOT EXISTS metadb;
+    CREATE DATABASE IF NOT EXISTS cachedb;
+    CREATE DATABASE IF NOT EXISTS mlpipeline;
+
+    CREATE USER IF NOT EXISTS 'kubeflow'@'%' IDENTIFIED WITH mysql_native_password BY '${KUBEFLOW_DB_PASSWORD}';
+    ALTER USER 'kubeflow'@'%' IDENTIFIED WITH mysql_native_password BY '${KUBEFLOW_DB_PASSWORD}';
+
+    GRANT ALL PRIVILEGES ON metadb.* TO 'kubeflow'@'%';
+    GRANT ALL PRIVILEGES ON cachedb.* TO 'kubeflow'@'%';
+    GRANT ALL PRIVILEGES ON mlpipeline.* TO 'kubeflow'@'%';
+
+    FLUSH PRIVILEGES;
+    EOF
+
+    echo ">>> INIT DONE"

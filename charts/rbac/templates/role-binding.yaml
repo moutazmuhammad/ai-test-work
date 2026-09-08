@@ -1,0 +1,12 @@
+{{- range .Values.roleBindings }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .name }}
+  namespace: {{ .namespace }}
+subjects:
+{{ toYaml .subjects | indent 2 }}
+roleRef:
+{{ toYaml .roleRef | indent 2 }}
+{{- end }}

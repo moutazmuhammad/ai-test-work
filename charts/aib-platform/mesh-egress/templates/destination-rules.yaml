@@ -1,0 +1,21 @@
+{{- if and .Values.meshEgress.gateway .Values.meshEgress.gateway.enabled }}
+{{- $defaults := .Values.meshEgress.defaults | default dict }}
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ .Values.meshEgress.gateway.name }}-dr
+  namespace: {{ .Values.meshEgress.namespace }}
+  labels:
+    {{- include "mesh-egress.labels" . | nindent 4 }}
+spec:
+  host: istio-egressgateway.{{ .Values.meshEgress.gateway.serviceNamespace }}.svc.cluster.local
+  subsets:
+    {{- range .Values.meshEgress.services }}
+    {{- $svc := merge (deepCopy .) $defaults }}
+    {{- if $svc.enabled }}
+    - name: {{ $svc.name }}
+      labels:
+        istio: egressgateway
+    {{- end }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,26 @@
+{{- $defaults := .Values.meshEgress.defaults | default dict }}
+{{- range .Values.meshEgress.services }}
+{{- $svc := merge (deepCopy .) $defaults }}
+{{- if $svc.enabled }}
+{{- $protocol := upper ($svc.protocol | default "HTTPS") }}
+{{- $portName := ternary "tls" "http" (eq $protocol "HTTPS") }}
+{{- $portProto := ternary "TLS" "HTTP" (eq $protocol "HTTPS") }}
+---
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: {{ $svc.name }}-se
+  namespace: {{ $svc.namespace }}
+  labels:
+    {{- include "mesh-egress.labels" $ | nindent 4 }}
+spec:
+  hosts:
+    - {{ $svc.host }}
+  location: MESH_EXTERNAL
+  ports:
+    - number: {{ $svc.port }}
+      name: {{ $portName }}
+      protocol: {{ $portProto }}
+  resolution: {{ $svc.resolution | default "DNS" }}
+{{- end }}
+{{- end }}

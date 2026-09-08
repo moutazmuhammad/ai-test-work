@@ -1,0 +1,282 @@
+## Dev environment - AI Platform mesh configuration
+
+# To check mTLS is configured via PeerAuthentication:
+# kubectl get peerauthentication -A 
+# kubectl get peerauthentication -n argocd
+mesh-security:
+  meshSecurity:
+    mtls:
+      enabled: true
+      mode: STRICT
+      namespaces: 
+        - name: aib-auth
+        - name: aib-system
+
+    authorizationPolicies:
+      - name: aib-auth
+        namespace: aib-auth        # Where the policy is created
+        action: ALLOW
+        rules:
+          - from:                           # Who is allowed
+            - namespaces:                 # Allow from these namespaces
+                - aib-auth
+                - aib-system
+                - istio-system
+                - aibplus-profile
+      - name: oauth2
+        namespace: aib-auth
+        action: ALLOW
+        rules:
+          - to:
+            - hosts:
+              - oauth2-proxy.aib-auth.svc.cluster.local
+            - paths:
+              - /oauth2/*
+      - name: mlflow
+        namespace: ml-orchestration
+        selector:
+          app: mlflow
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: mlrun
+        namespace: aib-system
+        selector:
+          release: mlrun
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-pipelines
+        namespace: aib-system
+        selector:
+          app: ml-pipeline-ui
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-dashboard
+        namespace: aib-system
+        selector:
+          app: kubeflow-dashboard
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-jupyter
+        namespace: aib-system
+        selector:
+          app: jupyter-web-app
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-tensorboards
+        namespace: aib-system
+        selector:
+          app: tensorboards-web-app
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-volumes
+        namespace: aib-system
+        selector:
+          app: volumes-web-app
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+      - name: kubeflow-notebook
+        namespace: aibplus-profile
+        action: CUSTOM
+        provider: oauth2-proxy
+        rules:
+          - {}
+
+
+
+    requestAuthentication: []
+    rateLimiting: []
+
+# To check Istio Gateway and Virtual Services :
+# kubectl get gateways.networking.istio.io -A
+# kubectl get virtualservices.networking.istio.io -A
+
+mesh-networking:
+  meshNetworking:
+    domain: ${BASE_DOMAIN}
+    namespace: aib-auth
+    gateway:
+      enabled: true
+      name: platform-ingress-gateway
+      selector:
+        istio: ingressgateway
+      port:
+        number: 80
+        name: http
+        protocol: HTTP
+
+    services:
+      - name: nuclio-dashboard
+        subdomain: nuclio
+        serviceNamespace: aib-system
+        port: 8070
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      - name: argocd
+        subdomain: argocd
+        namespace: argocd
+        port: 80
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      - name: mlflow
+        subdomain: mlflow
+        serviceNamespace: ml-orchestration
+        port: 80
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      - name: keycloak
+        subdomain: keycloak
+        serviceNamespace: identity
+        port: 80
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      - name: dex
+        subdomain: dex
+        serviceNamespace: aib-auth
+        port: 5556
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      - name: oauth2-proxy
+        subdomain: auth
+        serviceNamespace: aib-auth
+        port: 80
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      - name: mlrun-ui
+        subdomain: mlrun
+        serviceNamespace: aib-system
+        port: 80
+        timeout: 300s
+        retries:
+          attempts: 3
+          perTryTimeout: 120s
+      # - name: jupyter-web-app-service
+      #   subdomain: jupyter
+      #   serviceNamespace: aib-system
+      #   port: 80
+      #   timeout: 300s
+      #   retries:
+      #     attempts: 3
+      #     perTryTimeout: 120s
+      #   routes:
+      #     - pathPrefix: /jupyter/
+      #       host: jupyter-web-app-service.aib-system.svc.cluster.local
+      #       port: 80
+      #       # customHeaders:
+      #       #   request:
+      #       #     add:
+      #       #       x-forwarded-prefix: /jupyter
+      #       rewrite: /
+      - name: dashboard
+        subdomain: kubeflow
+        serviceNamespace: aib-system
+        port: 80
+        routes:
+        - pathPrefix: /oauth2
+          host: oauth2-proxy.aib-auth.svc.cluster.local
+          port: 80
+        - pathPrefix: /mlrun
+          host: mlrun-ui.aib-system.svc.cluster.local
+          port: 80
+        - pathPrefix: /nuclio
+          host: nuclio-dashboard.aib-system.svc.cluster.local
+          port: 8070
+        - pathPrefix: /pipeline
+          host: ml-pipeline-ui.aib-system.svc.cluster.local
+          port: 80
+        - pathPrefix: /jupyter/
+          host: jupyter-web-app-service.aib-system.svc.cluster.local
+          port: 80
+          customHeaders:
+            request:
+              add:
+                x-forwarded-prefix: /jupyter/
+          rewrite: /
+        - pathPrefix: /tensorboards/
+          host: tensorboards-web-app-service.aib-system.svc.cluster.local
+          port: 80
+          customHeaders:
+            request:
+              add:
+                x-forwarded-prefix: /tensorboards/
+          rewrite: /
+        - pathPrefix: /volumes/
+          host: volumes-web-app-service.aib-system.svc.cluster.local
+          port: 80
+          customHeaders:
+            request:
+              add:
+                x-forwarded-prefix: /volumes/
+          rewrite: /
+        # CATCH-ALL MUST BE LAST
+        - pathPrefix: /
+          host: dashboard.aib-system.svc.cluster.local
+          port: 80
+
+
+
+
+
+mesh-egress:
+  meshEgress:
+    namespace: aib-auth
+    gateway:
+      enabled: false
+      name: platform-egress-gateway
+      serviceNamespace: istio-system
+      selector:
+        istio: egressgateway
+
+    services: #[]
+      # - name: google
+      #   enabled: true
+      #   namespace: aib-auth
+      #   host: github.vodafone.com
+      #   port: 443
+      #   resolution: DNS        # DNS | STATIC | NONE
+      #   location: MESH_EXTERNAL  # MESH_EXTERNAL | MESH_INTERNAL
+      #   ## Optional: additional ports
+      #   additionalPorts: []
+      - name: keycloak
+        enabled: true
+        namespace: aib-auth
+        host: keycloak.${BASE_DOMAIN}
+        port: 443
+        resolution: DNS        # DNS | STATIC | NONE
+        location: MESH_EXTERNAL  # MESH_EXTERNAL | MESH_INTERNAL
+        ## Optional: additional ports
+        additionalPorts: []
+      - name: dex
+        enabled: true
+        namespace: aib-auth
+        host: dex.${BASE_DOMAIN}
+        port: 443
+        resolution: DNS        # DNS | STATIC | NONE
+        location: MESH_EXTERNAL  # MESH_EXTERNAL | MESH_INTERNAL
+        ## Optional: additional ports
+        additionalPorts: []

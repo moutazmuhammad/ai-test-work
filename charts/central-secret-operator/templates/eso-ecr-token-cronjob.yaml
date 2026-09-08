@@ -1,0 +1,139 @@
+{{- if .Values.aws.enabled }}
+{{- if .Values.aws.ecrTokenGenerator }}
+{{- if .Values.aws.ecrTokenGenerator.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+  namespace: {{ .Values.aws.ecrTokenGenerator.namespace | default .Values.serviceAccount.namespace | default "default" }}
+  labels:
+    {{- include "central-secret-operator.labels" . | nindent 4 }}
+  {{- if eq (.Values.aws.authMethod | default "irsa") "irsa" }}
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.aws.setupIAM.iamRoleArn | quote }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+  namespace: {{ .Values.aws.ecrTokenGenerator.targetNamespace | default "aib-system" }}
+  labels:
+    {{- include "central-secret-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+  namespace: {{ .Values.aws.ecrTokenGenerator.targetNamespace | default "aib-system" }}
+  labels:
+    {{- include "central-secret-operator.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+    namespace: {{ .Values.aws.ecrTokenGenerator.namespace | default .Values.serviceAccount.namespace | default "default" }}
+roleRef:
+  kind: Role
+  name: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+  namespace: {{ .Values.aws.ecrTokenGenerator.namespace | default .Values.serviceAccount.namespace | default "default" }}
+  labels:
+    {{- include "central-secret-operator.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.aws.ecrTokenGenerator.schedule | default "0 */10 * * *" | quote }}
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: {{ .Values.aws.ecrTokenGenerator.name | default "ecr-token-generator" }}
+          {{- with .Values.aws.ecrTokenGenerator.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          initContainers:
+            - name: ecr-token-fetch
+              {{- with .Values.aws.ecrTokenGenerator.securityContext }}
+              securityContext:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              image: {{ .Values.aws.ecrTokenGenerator.awsCliImage.repository }}:{{ .Values.aws.ecrTokenGenerator.awsCliImage.tag }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  aws ecr get-login-password --region ${AWS_REGION} > /shared/ecr-token
+                  echo "ECR token fetched successfully"
+              env:
+                - name: AWS_REGION
+                  value: {{ .Values.aws.ecrTokenGenerator.region | default .Values.aws.setupIAM.region | quote }}
+              {{- with .Values.aws.ecrTokenGenerator.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: ecr-token-apply
+              {{- with .Values.aws.ecrTokenGenerator.securityContext }}
+              securityContext:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              image: {{ .Values.aws.ecrTokenGenerator.kubectlImage.repository }}:{{ .Values.aws.ecrTokenGenerator.kubectlImage.tag }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  TOKEN=$(cat /shared/ecr-token)
+
+                  kubectl create secret docker-registry ${SECRET_NAME} \
+                    --namespace=${TARGET_NAMESPACE} \
+                    --docker-server=${REGISTRY} \
+                    --docker-username=AWS \
+                    --docker-password="${TOKEN}" \
+                    --dry-run=client -o yaml | kubectl apply -f -
+
+                  echo "ECR token refreshed successfully for ${REGISTRY}"
+              env:
+                - name: REGISTRY
+                  value: {{ .Values.aws.ecrTokenGenerator.registry | quote }}
+                - name: TARGET_NAMESPACE
+                  value: {{ .Values.aws.ecrTokenGenerator.targetNamespace | default "aib-system" | quote }}
+                - name: SECRET_NAME
+                  value: {{ .Values.aws.ecrTokenGenerator.targetSecretName | default "nuclio-push" | quote }}
+              {{- with .Values.aws.ecrTokenGenerator.resources }}
+              resources:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: shared
+              emptyDir:
+                medium: Memory
+            - name: tmp
+              emptyDir: {}
+          restartPolicy: OnFailure
+{{- end }}
+{{- end }}
+{{- end }}

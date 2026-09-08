@@ -1,0 +1,51 @@
+{{- range $name, $policy := .Values.policies }}
+{{- if and $policy.enabled (eq (default "validate" $policy.type) "mutate") }}
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "kyverno-policies.labels" $ | nindent 4 }}
+    {{- with $policy.category }}
+    app.kubernetes.io/component: {{ . | lower | replace " " "-" }}
+    {{- end }}
+  annotations:
+    policies.kyverno.io/title: {{ $policy.title | quote }}
+    {{- with $policy.category }}
+    policies.kyverno.io/category: {{ . | quote }}
+    {{- end }}
+    {{- with $policy.severity }}
+    policies.kyverno.io/severity: {{ . | quote }}
+    {{- end }}
+    {{- with $policy.description }}
+    policies.kyverno.io/description: {{ . | quote }}
+    {{- end }}
+    {{- with $policy.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  background: {{ hasKey $policy "background" | ternary $policy.background true }}
+  rules:
+  {{- range $policy.rules }}
+    - name: {{ .name }}
+      {{- include "kyverno-policies.matchExclude" . | nindent 6 }}
+      {{- with .preconditions }}
+      preconditions:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      mutate:
+        {{- with .patchStrategicMerge }}
+        patchStrategicMerge:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .patchesJson6902 }}
+        patchesJson6902: {{ . | quote }}
+        {{- end }}
+        {{- with .foreach }}
+        foreach:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

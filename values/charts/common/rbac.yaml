@@ -1,0 +1,131 @@
+# serviceAccounts:
+#   - name: app1
+#     namespace: default
+#   - name: app2
+#     namespace: kube-system
+
+# roles:
+#   - name: pod-reader
+#     namespace: default
+#     rules:
+#       - apiGroups: [""]
+#         resources: ["pods"]
+#         verbs: ["get", "list", "watch"]
+
+# roleBindings:
+#   - name: pod-reader-binding
+#     namespace: default
+#     roleRef:
+#       apiGroup: rbac.authorization.k8s.io
+#       kind: Role
+#       name: pod-reader
+#     subjects:
+#       - kind: ServiceAccount
+#         name: app1
+#         namespace: default
+
+# MLRun Job Runner — Role and RoleBinding for MLRun-submitted function/job pods.
+# The ServiceAccount comes from the mlrun-ce chart (jobRunner.serviceAccount.create: true).
+serviceAccounts: []
+
+roles:
+  - name: mlrun-job-runner
+    namespace: aib-system
+    rules:
+      - apiGroups: [""]
+        resources: ["secrets", "configmaps"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["pods", "pods/log"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["events"]
+        verbs: ["get", "list", "watch"]
+
+roleBindings:
+  - name: mlrun-job-runner
+    namespace: aib-system
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: mlrun-job-runner
+    subjects:
+      - kind: ServiceAccount
+        name: mlrun-job-runner
+        namespace: aib-system
+
+  # Pipeline access for the mlrun-api SA in the profile namespace. KFP multi-user mode
+  # authorizes via SubjectAccessReview, so MLRun submits without a hardcoded user email.
+  - name: mlrun-api-kfp-access
+    namespace: aibplus-profile
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kubeflow-pipelines-edit
+    subjects:
+      - kind: ServiceAccount
+        name: mlrun-api
+        namespace: aib-system
+
+  # Same binding in aib-system — needed for get_run/list_runs status
+  # checks via KFP auth (SubjectAccessReview) when polling pipeline state.
+  - name: mlrun-api-kfp-access-system
+    namespace: aib-system
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kubeflow-pipelines-edit
+    subjects:
+      - kind: ServiceAccount
+        name: mlrun-api
+        namespace: aib-system
+
+clusterRoles:
+  - name: profiles-profile-creator-role
+    rules:
+      - apiGroups: ["kubeflow.org"]
+        resources: ["profiles"]
+        verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+
+clusterRoleBindings:
+  - name: aibplus-platform-admins-grp
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: cluster-admin
+    subjects:
+      - kind: Group
+        apiGroup: rbac.authorization.k8s.io
+        name: "AIBPlus-Platform-Admins-GRP"
+
+  - name: aibplus-project-creators-kubeflow-grp
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: profiles-profile-creator-role
+    subjects:
+      - kind: Group
+        apiGroup: rbac.authorization.k8s.io
+        name: "AIBPlus-Project-Creators-GRP"
+
+  - name: aibplus-data-scientists-grp
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: kubeflow-edit
+    subjects:
+      - kind: Group
+        apiGroup: rbac.authorization.k8s.io
+        name: "AIBPlus-Data-Scientists-GRP"
+
+  - name: aibplus-platform-users-grp
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: view
+    subjects:
+      - kind: Group
+        apiGroup: rbac.authorization.k8s.io
+        name: "AIBPlus-Platform-Users-GRP"
+
+

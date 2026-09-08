@@ -1,0 +1,41 @@
+# common values
+name: gke-gateway-api
+namespace: gateway
+
+# For ML Product cluster
+addressName: gke-aib-plus-ml-product-ip
+listener:
+  name: https
+  port: 443
+  protocol: HTTPS
+  tls:
+    certificates:
+      # The secret name on GCP must match the hostname,
+      # BUT replace dots (.) with underscores (_)
+      # AND replace asterisk (*) with string ("wildcard")
+      # - *.dev.plus.aib.vodafone.com 
+      - kubeflow.dev.plus.aib.vodafone.com
+      - mlrun.dev.plus.aib.vodafone.com
+      - alert.dev.plus.aib.vodafone.com
+      - minio.dev.plus.aib.vodafone.com
+      - s3.dev.plus.aib.vodafone.com
+      - mlflow.dev.plus.aib.vodafone.com
+      - nuclio.dev.plus.aib.vodafone.com
+      - auth.dev.plus.aib.vodafone.com
+      - dex.dev.plus.aib.vodafone.com
+      - inference.dev.plus.aib.vodafone.com
+      - llm.dev.plus.aib.vodafone.com
+      - features.dev.plus.aib.vodafone.com
+      - prometheus.dev.plus.aib.vodafone.com
+      - grafana.dev.plus.aib.vodafone.com
+      - raiproxy.dev.plus.aib.vodafone.com
+
+# For Shared Services cluster
+# addressName: gke-aib-plus-shared-services-ip
+# listener:
+#   name: https
+#   port: 443
+#   protocol: HTTPS
+#   tls:
+#     certificates:
+#       - argocd.dev.plus.aib.vodafone.com

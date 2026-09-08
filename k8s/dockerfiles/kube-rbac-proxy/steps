@@ -1,0 +1,18 @@
+#### 1- upgrade Golang
+
+git clone https://github.com/udhos/update-golang
+cd update-golang
+sudo ./update-golang.sh
+
+source /etc/profile.d/golang_path.sh
+
+#### 2- build a clean version of kube-rbac-proxy image
+
+git clone https://github.com/kube-rbac-proxy/kube-rbac-proxy
+cd kube-rbac-proxy
+git checkout dependabot/go_modules/github.com/google/cel-go-0.29.0
+git merge origin/dependabot/go_modules/google.golang.org/grpc-1.82.1
+go get golang.org/x/text@v0.40.0
+go mod tidy
+make build
+docker build -t europe-west1-docker.pkg.dev/vf-grp-aib-dev-mirror/aib-plus-images/kube-rbac-proxy:0.22.1-fixed .

@@ -1,0 +1,803 @@
+
+
+serviceAccount:
+  create: true
+
+  # Kubernetes service account which will work as workloadIdentityUser
+  name: eso-service-account
+
+  # namespace where create kubernetes service account created
+  namespace: default
+
+
+## Cluster secret store which will be used across cluster to fetch secrets from Secret Manager
+clusterSecretStore:
+    name: cluster-secret-store
+
+    #This is the project ID where secrets are restored - GCP or AWS Secret Manager project ID
+    targetProjectId: vf-grp-aibplus-dev-shared-svcs
+
+
+googleCloud:
+  # set this true if you have GCP platform for product
+  enabled: false                 
+  
+  # This is an IAM set up to create GCP SA with secreterAccess role and binding it with Kubernetes SA  
+  # Set this to 'true' if set up is not done already -- refer gcp-iam-job.yaml for more details
+  setupIAM:
+    enabled: false
+    # This is product project ID
+    projectId: vf-grp-aibplus-dev-mlproduct
+
+    # Google Cloud service account name which should be created
+    serviceAccountName: ml-product-eso-sa
+
+    image:
+      repository: google/cloud-sdk
+      tag: slim
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+
+aws:
+  # set this true if you have AWS platform for product
+  enabled: false
+
+  # Auth method: "podIdentity" (EKS Pod Identity) or "irsa" (IAM Roles for Service Accounts)
+  authMethod: irsa
+
+  setupIAM:
+    enabled: false
+    region: eu-west-1
+
+    # Your 12-digit AWS Account ID
+    accountId: 123456789012
+
+    # The OIDC ID from your EKS cluster
+    # Example: oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE
+    oidcProvider: ""
+
+    # The name you want for the IAM Role and Policy
+    roleName: external-secrets-operator-role
+    policyName: ESO-SecretsManager-Policy
+    iamRoleArn: arn:aws:iam::123456789012:role/external-secrets-operator-role
+
+    image:
+      repository: amazon/aws-cli
+      tag: "2.17.16"
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+
+secrets:
+  ## ArgoCD secrets to be created for the product                     
+  # external secret name for ESO
+  - name: eso-argocd-agent-ca
+    namespace: argocd
+    # actual kubernetes secret name you targeted to create in the cluster             
+    targetName: argocd-agent-ca  
+    # type of kubernetes secret, it can be Opaque, tls, etc..         
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+        # key name inside the kubernetes secret in the cluster
+      - secretKey: tls.crt              
+        remoteRef:
+          # name of secret in GCP/AWS Secret Manager
+          key: argocd-agent-ca 
+          # name of field inside GCP/AWS Secret Manager         
+          property: tls.crt
+          # version of secret you want to access
+          version: latest
+          # optional: provide if you have encoded secrets in the Secrets Manager
+          decodingStrategy: Base64
+    
+  - name: eso-agent-tls-secret
+    namespace: argocd
+    targetName: argocd-agent-client-tls
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: argocd-agent-client-tls
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: argocd-agent-client-tls
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+
+  ## Oauth secrets
+  - name: eso-oauth2-proxy-secret
+    namespace: aib-auth
+    targetName: oauth2-proxy-secret
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: OAUTH2_PROXY_CLIENT_ID
+        remoteRef:
+          key: oauth2-proxy-secret
+          property: OAUTH2_PROXY_CLIENT_ID
+          version: latest
+      - secretKey: OAUTH2_PROXY_CLIENT_SECRET
+        remoteRef:
+          key: oauth2-proxy-secret
+          property: OAUTH2_PROXY_CLIENT_SECRET
+          version: latest
+      - secretKey: OAUTH2_PROXY_COOKIE_SECRET
+        remoteRef:
+          key: oauth2-proxy-secret
+          property: OAUTH2_PROXY_COOKIE_SECRET
+          version: latest
+
+  - name: eso-dex-secret
+    namespace: aib-auth
+    targetName: dex-secret
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: DEX_OAUTH2_PROXY_CLIENT_ID
+        remoteRef:
+          key: dex-secret
+          property: DEX_OAUTH2_PROXY_CLIENT_ID
+          version: latest
+      - secretKey: DEX_OAUTH2_PROXY_CLIENT_SECRET
+        remoteRef:
+          key: dex-secret
+          property: DEX_OAUTH2_PROXY_CLIENT_SECRET
+          version: latest
+      - secretKey: DEX_OIDC_CLIENT_ID
+        remoteRef:
+          key: dex-secret
+          property: DEX_OIDC_CLIENT_ID
+          version: latest
+      - secretKey: DEX_OIDC_CLIENT_SECRET
+        remoteRef:
+          key: dex-secret
+          property: DEX_OIDC_CLIENT_SECRET
+          version: latest
+
+  ## MySQL secrets
+  - name: eso-mysql-credentials
+    namespace: aib-data         
+    targetName: mysql-credentials
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: mysql-root-password             
+        remoteRef:
+          key: mysql-credentials        
+          property: mysql-root-password
+          version: latest
+      - secretKey: mysql-replication-password
+        remoteRef:
+          key: mysql-credentials
+          property: mysql-replication-password
+          version: latest
+      - secretKey: mysql-password
+        remoteRef:
+          key: mysql-credentials
+          property: mysql-password
+          version: latest
+      - secretKey: KUBEFLOW_DB_PASSWORD
+        remoteRef:
+          key: mysql-credentials
+          property: KUBEFLOW_DB_PASSWORD
+          version: latest
+      - secretKey: MLRUN_DB_PASSWORD
+        remoteRef:
+          key: mysql-credentials
+          property: MLRUN_DB_PASSWORD
+          version: latest
+      - secretKey: SEAWEEDFS_DB_PASSWORD
+        remoteRef:
+          key: mysql-credentials
+          property: SEAWEEDFS_DB_PASSWORD
+          version: latest
+
+  # kubeflow -> Mysql
+  - name: eso-mysql-secret
+    namespace: aib-system         
+    targetName: mysql-secret
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: username            
+        remoteRef:
+          key: mysql-secret        
+          property: username
+          version: latest
+      - secretKey: password
+        remoteRef:
+          key: mysql-secret
+          property: password
+          version: latest
+  
+  # Kubeflow -> SeaweedFs
+  - name: eso-mlpipeline-minio-artifact
+    namespace: aib-system          
+    targetName: mlpipeline-minio-artifact           
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: accesskey             
+        remoteRef:
+          key: mlpipeline-minio-artifact        
+          property: accesskey
+          version: latest
+      - secretKey: secretkey
+        remoteRef:
+          key: mlpipeline-minio-artifact
+          property: secretkey
+          version: latest
+
+  # Kubeflow pipeline -> SeaweedFs
+  - name: eso-mlpipeline-minio-artifact
+    namespace: aibplus-profile        
+    targetName: mlpipeline-minio-artifact           
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: accesskey             
+        remoteRef:
+          key: mlpipeline-minio-artifact        
+          property: accesskey
+          version: latest
+      - secretKey: secretkey
+        remoteRef:
+          key: mlpipeline-minio-artifact
+          property: secretkey
+          version: latest
+
+  ## Seaweed admin ui secrets
+  - name: eso-seaweedfs-admin-credentials
+    namespace: aib-data         
+    targetName: seaweedfs-admin-credentials
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: adminUser            
+        remoteRef:
+          key: seaweedfs-admin-credentials       
+          property: adminUser
+          version: latest
+      - secretKey: adminPassword             
+        remoteRef:
+          key: seaweedfs-admin-credentials
+          property: adminPassword
+          version: latest
+
+  # SeaweedFS -> mysql
+  - name: eso-seaweedfs-db-credentials
+    namespace: aib-data         
+    targetName: seaweedfs-db-credentials
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: mariadb-password             
+        remoteRef:
+          key: seaweedfs-db-credentials       
+          property: mariadb-password
+          version: latest
+
+  # SeaweedFS S3 keys
+  - name: eso-seaweedfs-s3-config
+    namespace: aib-data         
+    targetName: seaweedfs-s3-config
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: seaweedfs_s3_config            
+        remoteRef:
+          key: seaweedfs-s3-config
+          version: latest
+
+  ## MLRun -> mysql secret
+  - name: eso-mlrun-db
+    namespace: aib-system         
+    targetName: mlrun-db
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: dsn             
+        remoteRef:
+          key: mlrun-db      
+          property: dsn
+          version: latest
+      - secretKey: oldDsn            
+        remoteRef:
+          key: mlrun-db      
+          property: oldDsn
+          version: latest
+
+  ## Nuclio registry push secret (creates K8s secret for pushing function images)
+  - name: eso-nuclio-push
+    namespace: aib-system
+    targetName: nuclio-push
+    targetType: kubernetes.io/dockerconfigjson
+    refreshInterval: 1h
+    data:
+      - secretKey: .dockerconfigjson
+        remoteRef:
+          key: nuclio-push
+          version: latest
+
+  ## MinIO secrets                  
+  - name: eso-minio-credentials
+    namespace: aib-system          
+    targetName: minio-credentials           
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: AWS_ACCESS_KEY_ID             
+        remoteRef:
+          key: minio-credentials        
+          property: AWS_ACCESS_KEY_ID
+          version: latest
+      - secretKey: AWS_SECRET_ACCESS_KEY
+        remoteRef:
+          key: minio-credentials
+          property: AWS_SECRET_ACCESS_KEY
+          version: latest
+
+  ## MinIO secrets for notebook profile namespace (used by PodDefault mlrun-env)
+  - name: eso-minio-credentials-profile
+    namespace: aibplus-profile
+    targetName: minio-credentials
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: AWS_ACCESS_KEY_ID
+        remoteRef:
+          key: minio-credentials
+          property: AWS_ACCESS_KEY_ID
+          version: latest
+      - secretKey: AWS_SECRET_ACCESS_KEY
+        remoteRef:
+          key: minio-credentials
+          property: AWS_SECRET_ACCESS_KEY
+          version: latest
+
+  # MLRUN -> REDIS
+  - name: eso-mlrun-redis-credentials
+    namespace: aib-system
+    targetName: mlrun-redis-credentials
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: MLRUN_REDIS__URL
+        remoteRef:
+          key: mlrun-redis-credentials
+          property: MLRUN_REDIS__URL
+          version: latest
+      - secretKey: REDIS_USER
+        remoteRef:
+          key: mlrun-redis-credentials
+          property: REDIS_USER
+          version: latest
+      - secretKey: REDIS_PASSWORD
+        remoteRef:
+          key: mlrun-redis-credentials
+          property: REDIS_PASSWORD
+          version: latest
+
+  # REDIS
+  - name: eso-redis-credentials
+    namespace: aib-data
+    targetName: redis-credentials
+    targetType: Opaque
+    refreshInterval: 1h
+    data:
+      - secretKey: redis-password
+        remoteRef:
+          key: redis-credentials
+          property: redis-password
+          version: latest
+
+  ## DNS certificates
+  - name: eso-alert-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: alert.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: alert_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: alert_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: alert_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+  
+  - name: eso-auth-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: auth.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: auth_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: auth_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: auth_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-dex-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: dex.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: dex_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: dex_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: dex_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+
+  - name: eso-features-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: features.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: features_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: features_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: features_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-grafana-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: grafana.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: grafana_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: grafana_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: grafana_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-inference-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: inference.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: inference_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: inference_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: inference_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-kubeflow-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: kubeflow.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: kubeflow_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: kubeflow_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: kubeflow_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+  
+  - name: eso-llm-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: llm.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: llm_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: llm_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: llm_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+
+  - name: eso-minio-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: minio.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: minio_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: minio_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: minio_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-mlflow-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: mlflow.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: mlflow_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: mlflow_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: mlflow_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-mlrun-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: mlrun.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: mlrun_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: mlrun_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: mlrun_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-nuclio-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: nuclio.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: nuclio_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: nuclio_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: nuclio_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-prometheus-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: prometheus.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: prometheus_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: prometheus_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: prometheus_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-s3-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: s3.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: s3_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: s3_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: s3_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64
+
+  - name: eso-raiproxy-dev-plus-aib-vodafone-com
+    namespace: gateway
+    targetName: raiproxy.dev.plus.aib.vodafone.com
+    targetType: kubernetes.io/tls
+    refreshInterval: 1h
+    data:
+      - secretKey: tls.crt
+        remoteRef:
+          key: raiproxy_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.crt
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.key
+        remoteRef:
+          key: raiproxy_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.key
+          version: latest
+          decodingStrategy: Base64
+      - secretKey: tls.csr
+        remoteRef:
+          key: raiproxy_dev_plus_aib_vodafone_com-tls-secret
+          property: tls.csr
+          version: latest
+          decodingStrategy: Base64

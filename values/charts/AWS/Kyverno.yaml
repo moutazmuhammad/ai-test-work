@@ -1,0 +1,81 @@
+# =============================================================================
+# Kyverno — AWS overrides (layered on top of common values via -f common -f AWS)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Images — pulled from private ECR registry
+# -----------------------------------------------------------------------------
+global:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+
+# -----------------------------------------------------------------------------
+# CRDs
+# -----------------------------------------------------------------------------
+crds:
+  migration:
+    image:
+      registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+      repository: aibplus-images/kyverno-cli
+
+# -----------------------------------------------------------------------------
+# Feature Flags — registry credential helper
+# -----------------------------------------------------------------------------
+features:
+  registryClient:
+    credentialHelpers:
+      - default
+      - ecr
+
+# -----------------------------------------------------------------------------
+# Config — default registry mutation
+# -----------------------------------------------------------------------------
+config:
+  enableDefaultRegistryMutation: true
+  defaultRegistry: 490083271972.dkr.ecr.af-south-1.amazonaws.com/aibplus-images
+
+# -----------------------------------------------------------------------------
+# Admission Controller
+# -----------------------------------------------------------------------------
+admissionController:
+  container:
+    image:
+      repository: aibplus-images/kyverno
+
+  initContainer:
+    image:
+      repository: aibplus-images/kyvernopre
+
+# -----------------------------------------------------------------------------
+# Background Controller
+# -----------------------------------------------------------------------------
+backgroundController:
+  image:
+    repository: aibplus-images/kyverno-background-controller
+
+# -----------------------------------------------------------------------------
+# Cleanup Controller
+# -----------------------------------------------------------------------------
+cleanupController:
+  image:
+    repository: aibplus-images/kyverno-cleanup-controller
+
+# -----------------------------------------------------------------------------
+# Reports Controller
+# -----------------------------------------------------------------------------
+reportsController:
+  image:
+    repository: aibplus-images/kyverno-reports-controller
+
+# -----------------------------------------------------------------------------
+# Helm Test & Webhook Cleanup
+# -----------------------------------------------------------------------------
+test:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/kyverno-readiness-checker
+
+webhooksCleanup:
+  image:
+    registry: 490083271972.dkr.ecr.af-south-1.amazonaws.com
+    repository: aibplus-images/kyverno-readiness-checker

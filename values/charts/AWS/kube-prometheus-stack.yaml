@@ -43,34 +43,8 @@ prometheus:
       cloud: aws
 
 
-alertmanager:
-  alertmanagerSpec:
-    # Mounted by the operator at /etc/alertmanager/secrets/<name>/. Populated by
-    # ESO from Secrets Manager (eso-alertmanager-opco-webhook in
-    # values/charts/AWS/central-secret-operator.yaml) so no market's Lambda URL
-    # is committed to git.
-    #
-    # NOTE: Alertmanager will not start until this Secret exists. Deploy
-    # central-secret-operator first.
-    secrets:
-      - alertmanager-opco-webhook
-
-  config:
-    # Replaces the placeholder receiver in the common values, which accepted
-    # alerts and dropped them — including the AIBWatchdog heartbeat whose whole
-    # purpose is to prove this path works.
-    receivers:
-      - name: opco-queue
-        webhook_configs:
-            # url_file is read at notify time, so rotating the Secret does not
-            # need an Alertmanager restart. Requires Alertmanager >= v0.26.
-          - url_file: /etc/alertmanager/secrets/alertmanager-opco-webhook/url
-            send_resolved: true             # also notify when an alert stops firing
-            # The Lambda function URL must use AWS_IAM auth, not NONE — a NONE
-            # function URL is an unauthenticated public endpoint that anyone can
-            # post forged alerts to.
-            http_config:
-              follow_redirects: false
+# alertmanager secrets/receivers now come from common (ESO + AWS Secrets Manager).
+# The Lambda function URL must use AWS_IAM auth, not NONE, or it's a public endpoint.
 
 
 grafana:

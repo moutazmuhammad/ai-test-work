@@ -135,6 +135,7 @@ mesh-security:
                 - "nuclio.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
               notPaths:
                 - "/oauth2/*"
+                - "/api/function_invocations*"
 
       # Direct ClusterIP access bypassed the public auth layer; access is now blocked at port 8070.
       # Verified on GCP: only mlrun-api accesses :8070 directly; notebooks use default-editor and mlrun-api. Re-confirm on EKS.

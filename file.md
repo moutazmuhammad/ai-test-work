@@ -104,3 +104,16 @@ Step 4/5 succeed with **no application-level auth** on the invoke path (see TODO
 `aib_platform.yaml`) — that's expected today, not a bug. Before real external traffic
 relies on this, add JWT (Dex) or API-key auth to the `nuclio-invoke` policy and re-run
 step 4 to confirm unauthenticated requests are now rejected.
+
+
+##
+
+- cert-manager — prometheus.servicemonitor.enabled (not set in common values → needs adding)
+- dex — serviceMonitor.enabled (not set → needs adding)
+- external-secrets — serviceMonitor.enabled (not set → needs adding)
+- oauth2-proxy — serviceMonitor.enabled (not set → needs adding)
+- seaweedfs — serviceMonitor.enabled (two blocks, e.g. filer/s3 — not set → needs adding)
+- Kyverno — serviceMonitor.enabled already present but explicitly false (4 occurrences) — just flip to true
+- kube-prometheus-stack — already has its own ServiceMonitor mechanism enabled (kubernetesServiceMonitors.enabled: true)
+
+Already enabled by default: kubeflow-mysql, mlrun-mysql, redis.

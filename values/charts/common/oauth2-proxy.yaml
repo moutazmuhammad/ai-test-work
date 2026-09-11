@@ -19,6 +19,17 @@ config:
   requiredSecretKeys: null
   configFile: null
 
+# aib-auth has istio-injection enabled, so — same as redis in aib-data — disable the
+# sidecar on this pod rather than fight mTLS on the plaintext Prometheus scrape.
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+  aib.vodacom.co.za/sidecar-exemption-reason: "Istio sidecar disabled so the aib-ops Prometheus can scrape the plaintext metrics port"
+
+serviceMonitor:
+  enabled: true
+  namespace: aib-auth
+  interval: 30s
+
 affinity:
   podAntiAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:

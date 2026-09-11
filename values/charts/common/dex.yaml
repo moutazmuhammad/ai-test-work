@@ -22,6 +22,12 @@ envFrom:
 commonLabels:
   app: dex
 
+# aib-auth has istio-injection enabled, so — same as redis in aib-data — disable the
+# sidecar on this pod rather than fight mTLS on the plaintext Prometheus scrape.
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+  aib.vodacom.co.za/sidecar-exemption-reason: "Istio sidecar disabled so the aib-ops Prometheus can scrape the plaintext telemetry port"
+
 affinity:
   podAntiAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:
@@ -125,7 +131,12 @@ config:
   frontend:
     issuer: "AIB Plus"
     theme: "aibplus"
-    dir: "/srv/dex/web" 
+    dir: "/srv/dex/web"
+
+serviceMonitor:
+  enabled: true
+  namespace: aib-auth
+  interval: 30s
 
 volumes:
   - name: theme-volume

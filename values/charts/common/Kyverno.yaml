@@ -150,7 +150,7 @@ admissionController:
   #     maxUnavailable: 1
 
   serviceMonitor:
-    enabled: false
+    enabled: true
 
   metering:
     disabled: false
@@ -184,7 +184,7 @@ backgroundController:
     kubernetes.io/os: linux
 
   serviceMonitor:
-    enabled: false
+    enabled: true
 
   metering:
     disabled: false
@@ -218,7 +218,7 @@ cleanupController:
     kubernetes.io/os: linux
 
   serviceMonitor:
-    enabled: false
+    enabled: true
 
   metering:
     disabled: false
@@ -275,7 +275,7 @@ reportsController:
     kubernetes.io/os: linux
 
   serviceMonitor:
-    enabled: false
+    enabled: true
 
   metering:
     disabled: false

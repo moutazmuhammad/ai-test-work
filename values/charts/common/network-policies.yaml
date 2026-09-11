@@ -66,6 +66,17 @@ networkPolicies:
           ports:
             - protocol: TCP
               port: 4180
+        # oauth2-proxy metrics port, scraped by the aib-ops Prometheus.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - protocol: TCP
+              port: 44180
 
 ######################## dex
   - name: dex
@@ -85,6 +96,17 @@ networkPolicies:
           ports:
             - protocol: TCP
               port: 5556
+        # dex telemetry port, scraped by the aib-ops Prometheus.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - protocol: TCP
+              port: 5558
 
 
 ##########################################################
@@ -217,6 +239,17 @@ networkPolicies:
           ports:
             - protocol: TCP
               port: 23646
+        # master/volume/filer/s3/worker metrics port, scraped by the aib-ops Prometheus.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - protocol: TCP
+              port: 9327
       egress:
         - to:
             - podSelector:
@@ -662,6 +695,17 @@ networkPolicies:
               port: 15021 # istio healthcheck
             - protocol: TCP
               port: 10250 # webhook
+        # external-secrets metrics port, scraped by the aib-ops Prometheus.
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: aib-ops
+              podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+          ports:
+            - protocol: TCP
+              port: 8080
 
 
 #################### kyverno ####################

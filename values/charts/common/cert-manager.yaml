@@ -3,6 +3,13 @@ crds:
 
 prometheus:
   enabled: true
+  servicemonitor:
+    # cert-manager namespace has istio-injection disabled (see foundation.yaml) and no
+    # deny-all NetworkPolicy is defined for it, so the aib-ops Prometheus can already
+    # reach the plaintext metrics port with no extra istio/networkPolicy changes needed.
+    enabled: true
+    namespace: cert-manager
+    interval: 60s
 
 
 # Images — cert-manager GAR overrides.

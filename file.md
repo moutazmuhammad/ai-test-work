@@ -117,3 +117,4 @@ step 4 to confirm unauthenticated requests are now rejected.
 - kube-prometheus-stack — already has its own ServiceMonitor mechanism enabled (kubernetesServiceMonitors.enabled: true)
 
 Already enabled by default: kubeflow-mysql, mlrun-mysql, redis.
+No ServiceMonitor support found in the chart templates for: istiod, istio_egressgateway/ingressgateway, rai, rai-proxy, rbac, network-policies, foundation, central-secret-operator, mlrun-ce (mlrun.yaml), aib_platform.

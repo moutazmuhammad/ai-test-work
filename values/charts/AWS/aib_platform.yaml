@@ -122,10 +122,7 @@ mesh-security:
                 notValues:
                   - "true"
 
-      # Dashboard UI + management API (create/delete functions/projects, builds, etc.).
-      # Function invocation is carved out to its own path/policy below so external
-      # machine callers aren't forced through the human OIDC login flow.
-      - name: nuclio-dashboard
+      - name: nuclio
         namespace: aib-system
         selector:
           app: nuclio
@@ -139,27 +136,6 @@ mesh-security:
               notPaths:
                 - "/oauth2/*"
                 - "/api/function_invocations*"
-
-      # Function invocation path — dynamic dispatch by the X-Nuclio-Function-Name /
-      # X-Nuclio-Function-Namespace headers, so this covers every deployed function
-      # regardless of name. Explicit ALLOW so it is
-      # exempt from the oauth2-proxy CUSTOM check above (that check only matches
-      # notPaths, so without this the request would just fall through to default-allow
-      # unauthenticated; this policy documents that as an intentional, visible decision).
-      # TODO: no app-level auth yet — add JWT (RequestAuthentication against Dex) or an
-      # API-key check here before treating this as production-ready external exposure.
-      - name: nuclio-invoke
-        namespace: aib-system
-        selector:
-          app: nuclio
-          nuclio.io/app: dashboard
-        action: ALLOW
-        rules:
-          - to:
-              - hosts:
-                  - "nuclio.dev.aibplus.vodacom.aws.corp"  # Change by AIB+ Market
-                paths:
-                  - "/api/function_invocations*"
 
       # Direct ClusterIP access bypassed the public auth layer; access is now blocked at port 8070.
       # Verified on GCP: only mlrun-api accesses :8070 directly; notebooks use default-editor and mlrun-api. Re-confirm on EKS.
@@ -346,20 +322,6 @@ mesh-networking:
           perTryTimeout: 120s
 
         routes:
-          # Function invocation — dynamic dispatch by the X-Nuclio-Function-Name /
-          # X-Nuclio-Function-Namespace headers (verified against nuclio/nuclio
-          # pkg/dashboard/resource/invocation.go), so this single route works
-          # regardless of the deployed function's name.
-          # Split out from the catch-all below so it can carry its own AuthorizationPolicy
-          # (see mesh-security nuclio-invoke) instead of the human/OIDC oauth2-proxy gate.
-          # TODO: no app-level auth is enforced on this path yet — add JWT/API-key auth
-          # for external callers before relying on this for production traffic.
-          - pathPrefix: /api/function_invocations
-            host: nuclio-dashboard.aib-system.svc.cluster.local
-            port: 8070
-
-          # Dashboard UI + management API (create/delete functions/projects, etc.) —
-          # stays behind oauth2-proxy (see mesh-security nuclio-dashboard policy).
           - pathPrefix: /
             host: nuclio-dashboard.aib-system.svc.cluster.local
             port: 8070

@@ -20,7 +20,7 @@ global:
     serviceAccountName: "seaweedfs"
     automountServiceAccountToken: true
     monitoring:
-      enabled: false
+      enabled: true
     enableReplication: false
     replicationPlacement: "000"
     extraEnvironmentVars:
@@ -64,6 +64,7 @@ master:
   # Deploy the widened seaweedfs-internal policy first or this stalls on master-2.
   podAnnotations:
     sidecar.istio.io/inject: "true"
+    traffic.sidecar.istio.io/excludeInboundPorts: "9327"
 
   # Hashicorp Raft is the supported flavour for ≥3-node masters; the legacy
   # raftBootstrap path is single-node only.
@@ -143,6 +144,11 @@ volume:
   metricsPort: 9327
   ipBind: "0.0.0.0"
 
+  # Lets the sidecar-less aib-ops Prometheus scrape the metrics port in plaintext
+  # without tripping mTLS/AuthorizationPolicy enforcement.
+  podAnnotations:
+    traffic.sidecar.istio.io/excludeInboundPorts: "9327"
+
   # Reject writes once any disk drops below 5% free — leaves headroom for
   # compaction and prevents the cluster from wedging on a full volume.
   minFreeSpacePercent: 5
@@ -205,6 +211,7 @@ filer:
   # source namespace. A hand-set inject "false" 403'd every write on 2026-08-07.
   podAnnotations:
     sidecar.istio.io/inject: "true"
+    traffic.sidecar.istio.io/excludeInboundPorts: "9327"
   podSecurityContext:
     enabled: true
     runAsNonRoot: true
@@ -321,6 +328,11 @@ s3:
   port: 8333
   httpsPort: 0
   metricsPort: 9327
+
+  # Lets the sidecar-less aib-ops Prometheus scrape the metrics port in plaintext
+  # without tripping mTLS/AuthorizationPolicy enforcement.
+  podAnnotations:
+    traffic.sidecar.istio.io/excludeInboundPorts: "9327"
 
   # Auth from seaweedfs-s3-config (existingConfigSecret, so no auto-generated secret).
   # Identities: anvAdmin (full, for ops) and mlrunAppWriter (bucket `mlrun`; must match minio-credentials).
@@ -499,6 +511,12 @@ worker:
       drop:
         - ALL
   metricsPort: 9327
+
+  # Lets the sidecar-less aib-ops Prometheus scrape the metrics port in plaintext
+  # without tripping mTLS/AuthorizationPolicy enforcement.
+  podAnnotations:
+    traffic.sidecar.istio.io/excludeInboundPorts: "9327"
+    
   # Leave blank: the chart auto-derives <fullname>-admin.<ns>:<http>.<grpc>, which is
   # the format `weed worker -admin=` expects when admin.enabled is true.
   adminServer: ""

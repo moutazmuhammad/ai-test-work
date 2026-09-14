@@ -122,7 +122,7 @@ mesh-security:
               - key: request.headers[x-is-project-owner]
                 notValues:
                   - "true"
-                  
+
       - name: nuclio
         namespace: aib-system
         selector:
@@ -136,8 +136,8 @@ mesh-security:
                 - "nuclio.dev.plus.aib.vodafone.com"
               notPaths:
                 - "/oauth2/*"
-                - "/api/function_invocations*"
-                
+                # - "/api/function_invocations*"
+  
       # Direct ClusterIP access bypassed the public auth layer; access is now blocked at port 8070.
       # Verified on GCP: only mlrun-api accesses :8070 directly; notebooks use default-editor and mlrun-api. Re-confirm on EKS.
       - name: nuclio-dashboard-internal
@@ -246,7 +246,13 @@ mesh-security:
                   - "8888"   # filer http
                   - "18888"  # filer grpc
                   - "9327"   # metrics
-
+          # Admin has no separate metrics port, so scope this one to the path
+          # instead of opening 23646 to identity-free traffic wholesale.
+          - to:
+              - ports:
+                  - "23646"
+                paths:
+                  - "/metrics"
       # OAuth2 on the admin UI, except 33646 (worker gRPC PluginControlService).
       - name: seaweedfs-admin
         namespace: aib-data
@@ -258,6 +264,8 @@ mesh-security:
           - to:
               - notPorts:
                   - "33646"
+                notPaths:
+                  - "/metrics"
 
       # aib-ops has no istio sidecar, so this is enforced on the gateway itself.
       # Grafana is intentionally not here: it uses its own admin login.

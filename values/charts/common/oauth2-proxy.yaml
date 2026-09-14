@@ -19,6 +19,17 @@ config:
   requiredSecretKeys: null
   configFile: null
 
+podAnnotations:
+  traffic.sidecar.istio.io/excludeInboundPorts: "44180"
+
+metrics:
+  enabled: true
+  port: 44180
+  serviceMonitor:
+    enabled: true
+    namespace: aib-auth
+    interval: 30s
+
 affinity:
   podAntiAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:

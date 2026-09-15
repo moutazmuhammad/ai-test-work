@@ -288,3 +288,65 @@ extraObjects:
       portLevelMtls:
         8080:
           mode: DISABLE
+
+# Istio monitoring
+# charts/istiod and charts/gateway (ingress/egress gateways) don't ship their own
+# ServiceMonitor/PodMonitor templates, so kube-prometheus-stack (aib-ops) can't
+# discover them without these. Prometheus already watches istio-system
+# (serviceMonitorNamespaceSelector/podMonitorNamespaceSelector in kube-prometheus-stack.yaml),
+# and serviceMonitorSelectorNilUsesHelmValues/podMonitorSelectorNilUsesHelmValues are false,
+# so no release label is needed.
+
+# istiod exposes control-plane metrics on its own Service (port 15014, http-monitoring)
+  - apiVersion: monitoring.coreos.com/v1
+    kind: ServiceMonitor
+    metadata:
+      name: istiod
+      namespace: istio-system
+    spec:
+      namespaceSelector:
+        matchNames:
+          - istio-system
+      selector:
+        matchLabels:
+          app: istiod
+      endpoints:
+        - port: http-monitoring
+          path: /metrics
+          interval: 30s
+
+# The gateways' Envoy stats port (15090) isn't exposed on their Service, only on the
+# pod (containerPort http-envoy-prom), so these target pods directly via PodMonitor.
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: istio-ingressgateway
+      namespace: istio-system
+    spec:
+      namespaceSelector:
+        matchNames:
+          - istio-system
+      selector:
+        matchLabels:
+          istio: ingressgateway
+      podMetricsEndpoints:
+        - port: http-envoy-prom
+          path: /stats/prometheus
+          interval: 30s
+
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: istio-egressgateway
+      namespace: istio-system
+    spec:
+      namespaceSelector:
+        matchNames:
+          - istio-system
+      selector:
+        matchLabels:
+          istio: egressgateway
+      podMetricsEndpoints:
+        - port: http-envoy-prom
+          path: /stats/prometheus
+          interval: 30s
